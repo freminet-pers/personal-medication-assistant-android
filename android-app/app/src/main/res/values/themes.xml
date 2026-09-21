@@ -1,0 +1,10 @@
+<resources>
+    <style name="Theme.LunaMax" parent="android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:statusBarColor">@color/luna_paper_50</item>
+        <item name="android:navigationBarColor">@color/luna_paper_50</item>
+        <item name="android:colorAccent">@color/luna_teal_700</item>
+        <item name="android:windowActionModeOverlay">true</item>
+    </style>
+</resources>

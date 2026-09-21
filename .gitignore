@@ -1,0 +1,38 @@
+# Android / Gradle generated state
+**/.gradle/
+**/build/
+**/local.properties
+**/.idea/
+*.iml
+
+# Packaged outputs and transient reports
+*.apk
+*.aab
+APK/
+*.log
+*.tmp
+*.trace
+screenshots/
+captures/
+
+# Secrets and machine-local configuration
+.env
+.env.*
+*.key
+*.pem
+*.p12
+*.jks
+secrets/
+credentials/
+
+# Downloaded research repositories and generated evidence (2+ GB, not app source)
+调研证据/
+
+# Local recovery bundles live outside the repository
+*.bundle
+
+# OS metadata
+.DS_Store
+Thumbs.db
+desktop.ini
+

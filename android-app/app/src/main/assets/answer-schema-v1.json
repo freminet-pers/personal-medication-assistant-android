@@ -1,0 +1,11 @@
+{
+  "schema": "personal-medication-answer-v1",
+  "required": ["conclusion", "checks", "evidence", "seek_care"],
+  "properties": {
+    "conclusion": {"type": "string", "maxLength": 2400},
+    "checks": {"type": "array", "items": {"type": "string"}},
+    "evidence": {"type": "array", "items": {"required": ["level", "title", "url", "date", "uncertainty"]}},
+    "seek_care": {"type": "string"},
+    "safety_prompt_version": {"const": "medical-safety-v1"}
+  }
+}

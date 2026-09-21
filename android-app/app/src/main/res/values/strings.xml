@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">个人用药助手</string>
+    <string name="notification_channel_name">用药提醒</string>
+    <string name="notification_channel_description">本机生成的用药时间提醒</string>
+</resources>
