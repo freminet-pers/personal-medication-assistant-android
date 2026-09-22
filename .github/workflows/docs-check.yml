@@ -22,18 +22,23 @@ jobs:
           set -euo pipefail
           ruby -e 'require "yaml"; Dir[".github/workflows/*.yml", ".github/ISSUE_TEMPLATE/*.yml"].each { |path| YAML.load_file(path, aliases: true); puts path }'
 
-      - name: Check relative Markdown links
+      - name: Check current-document Markdown links
         shell: bash
         run: |
           python - <<'PY'
           import re
           from pathlib import Path
 
+          pages = [
+              Path("README.md"),
+              Path("README_EN.md"),
+              Path("CONTRIBUTING.md"),
+              Path("SECURITY.md"),
+              *Path("docs").rglob("*.md"),
+          ]
           pattern = re.compile(r"(?<!!)\[[^\]]+\]\(([^)]+)\)")
           missing = []
-          for page in Path(".").rglob("*.md"):
-              if ".git" in page.parts:
-                  continue
+          for page in pages:
               text = page.read_text(encoding="utf-8")
               for raw in pattern.findall(text):
                   target = raw.strip().split("#", 1)[0].strip("<>")
@@ -45,5 +50,5 @@ jobs:
           if missing:
               print("\\n".join(missing))
               raise SystemExit("Broken relative Markdown link(s)")
-          print("Relative Markdown links: OK")
+          print("Current-document relative Markdown links: OK")
           PY
