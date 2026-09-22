@@ -1,0 +1,49 @@
+name: Documentation checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  docs:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Parse workflow and issue-form YAML
+        shell: bash
+        run: |
+          set -euo pipefail
+          ruby -e 'require "yaml"; Dir[".github/workflows/*.yml", ".github/ISSUE_TEMPLATE/*.yml"].each { |path| YAML.load_file(path, aliases: true); puts path }'
+
+      - name: Check relative Markdown links
+        shell: bash
+        run: |
+          python - <<'PY'
+          import re
+          from pathlib import Path
+
+          pattern = re.compile(r"(?<!!)\[[^\]]+\]\(([^)]+)\)")
+          missing = []
+          for page in Path(".").rglob("*.md"):
+              if ".git" in page.parts:
+                  continue
+              text = page.read_text(encoding="utf-8")
+              for raw in pattern.findall(text):
+                  target = raw.strip().split("#", 1)[0].strip("<>")
+                  if not target or target.startswith(("http://", "https://", "mailto:")):
+                      continue
+                  candidate = (page.parent / target).resolve()
+                  if not candidate.exists():
+                      missing.append(f"{page}: {raw}")
+          if missing:
+              print("\\n".join(missing))
+              raise SystemExit("Broken relative Markdown link(s)")
+          print("Relative Markdown links: OK")
+          PY

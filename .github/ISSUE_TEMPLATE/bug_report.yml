@@ -1,0 +1,40 @@
+name: Bug report
+description: Report a reproducible product or documentation problem
+title: "[Bug] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not include personal health information, API keys, databases, or unredacted logs. For a suspected vulnerability, use SECURITY.md privately.
+  - type: textarea
+    id: summary
+    attributes:
+      label: What happened?
+      description: Describe the observable problem without private data.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduction
+      description: Include sanitized steps, version, device/API level, and fixture type.
+      placeholder: |
+        Version:
+        Device/API:
+        Fixture (mock/anonymous/local):
+        Steps:
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Sanitized evidence
+      description: Paste only redacted output or links. Never paste a key, health record, database, or private endpoint.
+    validations:
+      required: false

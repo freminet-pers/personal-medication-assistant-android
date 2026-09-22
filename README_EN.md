@@ -1,57 +1,89 @@
-# Personal Medication Assistant · v0.4.0
+# Personal Medication Assistant
 
 [English](README_EN.md) | [简体中文](README.md)
 
-Personal Medication Assistant is a local-first Android medication record, reminder, and AI assistance app. It separates Today, Medications, Documents, Health, and an auditable Assistant into five focused pages. The existing package remains `com.lunamax.medassistant`; the current Debug build is versionCode 4 / versionName 0.4.0.
+> **Technical Preview**: this is a local-first personal medication record and reminder tool. AI is used only as optional assistance for organizing or checking materials after the user confirms the request, with traceable sources where available. It is not a doctor, pharmacist, diagnostic system, prescribing system, or emergency service.
 
-## v0.4.0 screenshots
+## Start here
 
-These screenshots come from an API 36.1 AVD with anonymous demo data and no API key.
+The current public baseline is v0.4.0 on main: versionCode 4 / versionName 0.4.0. The historical Android applicationId remains com.lunamax.medassistant. The public Release contains a **debug-signed APK** for technical preview use, not a production build.
 
-<p align="center">
-  <a href="docs/screenshots/v0.4-assistant.png"><img src="docs/screenshots/v0.4-assistant.png" width="280" alt="Assistant page"></a>
-  <a href="docs/screenshots/v0.4-ai-services.png"><img src="docs/screenshots/v0.4-ai-services.png" width="280" alt="AI Services page"></a>
-</p>
+- [v0.4.0 Technical Preview notes](docs/发布说明-v0.4.0.md)
+- [v0.4.0 Release (debug APK)](https://github.com/freminet-pers/personal-medication-assistant-android/releases/tag/v0.4.0)
+- [User guide](docs/用户使用说明.md)
+- [Build and install guide](docs/构建说明.md)
+- [Testing and known limits](docs/测试与已知限制.md)
+- [Documentation index and archive notes](docs/文档索引.md)
 
-## What changed in v0.4.0
+The public evidence currently covers Android unit/contract tests, MockWebServer protocol tests, and specified checks on an API 36.1 AVD. Real API traffic, API 26/API 35, physical devices, production signing, and medical compliance are not claimed. The repository currently keeps historical screenshots named v0.3-*; they are not v0.4 evidence, so this page does not present them as a v0.4 preview. New anonymous v0.4 captures should be added only after they are recorded and reviewed. [Screenshot directory](docs/screenshots/)
 
-- The built-in DeepSeek preset is displayed as “DeepSeek V4.1 Flash” and uses the API model ID `deepseek-flash`.
-- Text answers and image recognition use the same selected Provider and model; there is no separate vision model.
-- Users can add, edit, select, test, and delete custom Providers.
-- The app supports native OpenAI Chat Completions, OpenAI Responses, and Anthropic Messages adapters.
-- Search is an independent Search Profile: built-in DeepSeek search reuses the built-in DeepSeek key; other models require an explicitly configured and tested search profile.
-- Provider and Search keys are isolated by configuration ID in Android Keystore. The UI reports credential status but never echoes a key.
-- SQLite migrates from v6 to v7 while retaining the local medication, reminder, health, and document boundaries.
+## Core medication workflow
 
-## Provider and multimodal boundary
+1. **Record medications**: maintain medications, real batches, inventory, and storage notes.
+2. **Schedule reminders**: create daily, weekly, interval, one-off, or as-needed plans; confirm taken, skipped, snoozed, or undone events in Today.
+3. **Keep source materials**: import an image/PDF into the app-private area first; recognition stays a draft until each field is reviewed.
+4. **Keep health context**: record only the minimum useful allergy, history, and adverse-reaction context locally.
+5. **Use the Assistant when needed**: select the minimum context and ask for evidence-aware organization or checking. Records and reminders work offline and do not require an API key.
 
-Custom API does not mean arbitrary private-protocol compatibility. Each Provider declares its protocol, base URL, model ID, authentication mode, output-field convention, and image capability. Saving a profile and testing the connection are separate actions. Image requests are enabled only after the profile declares image input and passes an anonymous tiny-image capability test. The send flow still previews minimal context and requires confirmation.
+## Who it is for / who it is not for
 
-Search uses native protocol tools only: OpenAI Responses `web_search`, Anthropic Messages `web_search_20250305`, and the built-in DeepSeek official search. A search profile must be saved, tested independently, and return structured URLs before the Assistant can use it.
+**Good fit**
 
-## Privacy and medical boundary
+- People who want a personal Android record for medications, reminders, inventory, and document drafts.
+- People willing to review a context preview and explicitly confirm before sending content to an external Provider.
+- People who want to keep sources, raw material, Provider/model metadata, and uncertainty visible for their own review.
 
-- Plans, status, inventory, health data, document drafts, and sessions remain in local SQLite by default; sensitive fields use Android Keystore AES/GCM.
-- API keys are excluded from SQLite backups, logs, source, screenshots, APK resources, and exported sessions; error messages are redacted.
-- Images and PDFs first stay in the app-private directory and are sent to the selected Provider only after confirmation.
-- AI output is evidence-aware assistance with uncertainty; it is not a doctor, pharmacist, label, emergency service, diagnostic system, or prescribing system.
+**Not a fit**
 
-This repository contains no real API key. Offline features remain available without a key, and documents can be saved while waiting for recognition. No real DeepSeek, search, or image request was made for this delivery.
+- Anyone seeking diagnosis, prescribing, dose adjustment, a complete clinical interaction database, or treatment decisions.
+- Anyone treating the app as emergency care, continuous monitoring, a clinical record system, or a multi-user health platform.
+- Anyone who cannot accept that a custom Provider may retain requests, log traffic, or apply its own privacy terms.
+- Production deployment without separate credentials, authentication, rate limits, egress controls, audit controls, release signing, and appropriate review.
 
-## Build, test, and artifacts
+For breathing difficulty, altered consciousness, chest pain, severe allergic reactions, or other urgent symptoms, contact local emergency services or a qualified clinician instead of waiting for the app or AI.
 
-The verified build environment uses Android Studio JDK 17, Android SDK platform 35, Build Tools 35.0.0, Gradle wrapper 8.7, and Android Gradle Plugin 8.6.1. The project entry point is `android-app`. On Windows, the Chinese workspace path can trigger a test-worker class-loading issue; the temporary ASCII X: mapping is documented in [构建说明](docs/构建说明.md).
+## AI assistance and confirmation gates
 
-Automated tests cover all three Provider protocols, unified text/image requests, independent search, safe error mapping, endpoint security, Provider defaults, and OccurrenceEngine. The API 36.1 AVD was checked at light/dark themes, approximately 412dp and 360dp widths, and 1.3x font scale. API 26/API 35, physical devices, and real API traffic are not claimed as verified.
+AI comes after the medication workflow and does not automatically change formal records:
 
-Debug APK: `android-app/app/build/outputs/apk/debug/app-debug.apk`
+- Saving a Provider profile is not the same as a successful connection; test it separately.
+- A custom Provider declares its protocol, model, endpoint, and image capability. Image requests are enabled only after an anonymous tiny-image capability test succeeds.
+- The send flow previews the minimum necessary context. The user confirms before a request is sent to the selected Provider or independent search service.
+- Image/PDF recognition creates a reviewable draft. Unknown fields stay empty or are marked uncertain; only field-by-field confirmation can write medication, batch, or document data.
+- Search requires an independent Search Profile, a separate test, and structured URLs. Web pages, tool results, and model output are untrusted input, not automatic medical conclusions.
+- Answers should retain sources and uncertainty and direct the user back to the label, pharmacist, or clinician.
 
-Versioned delivery copies: `个人用药助手-v0.4.0-debug.apk` and `APK/个人用药助手-v0.4.0-debug.apk`. APK files are ignored by Git and are not ordinary source files.
+v0.4.0 includes native adapters for OpenAI Chat Completions, OpenAI Responses, and Anthropic Messages. This does not mean arbitrary private-protocol or arbitrary-JSON gateway compatibility. See the [architecture notes](docs/架构说明.md) and [third-party notice](docs/第三方声明.md).
 
-See the [v0.4.0 acceptance report](19_v0.4.0_自定义API与统一多模态验收报告.md), [user guide](docs/用户使用说明.md), [architecture notes](docs/架构说明.md), and [test limitations](docs/测试与已知限制.md) for the full matrix.
+## Data, backup, and key boundaries
 
-Repository: [freminet-pers/personal-medication-assistant-android](https://github.com/freminet-pers/personal-medication-assistant-android). If the external push and Release are complete, the download page is [v0.4.0 Release](https://github.com/freminet-pers/personal-medication-assistant-android/releases/tag/v0.4.0); the acceptance report and final delivery status are authoritative.
+- Plans, dose status, inventory, health context, document drafts, and sessions are local SQLite data by default; images/PDFs first remain in the app-private area.
+- Sensitive data uses Android Keystore-backed AES/GCM. Provider and Search Profile keys are isolated; the UI reports credential status without echoing the key.
+- API keys are not stored in source, Git-tracked content, logs, screenshots, APK resources, SQLite backups, or exported sessions. This repository contains no real key.
+- After confirmation, the minimum necessary context is sent to the user-configured domain. The project cannot control a third-party service's retention, training, or privacy policy.
+- Offline records and reminders remain available without a key or network. Never put a key in an issue, pull request, screenshot, test fixture, or document.
+
+## Install, build, and verification boundary
+
+The public v0.4.0 Release APK is debug-signed and has SHA-256 0BDB94DD9BC2133D72C8072D1AFAB4B77A63020D13CE65B35790422F2737F858. Verify the source and accept the Technical Preview risk before installing; this is not a production-signed or medical-device build.
+
+The source build uses Android Studio JDK 17, Android SDK platform 35, Build Tools 35.0.0, Gradle wrapper 8.7, and Android Gradle Plugin 8.6.1. The entry point is android-app; commands and the Windows path workaround are in the [build guide](docs/构建说明.md).
+
+| Scope | Public status |
+|---|---|
+| Android Java/resource compilation and Debug assemble | Reported as passing in the acceptance record |
+| Unit tests, Occurrence contract, MockWebServer protocol contracts | Reported as passing |
+| API 36.1 AVD, light/dark themes, approximately 412dp/360dp, 1.3x font scale | Reported as passing |
+| Real DeepSeek/custom Provider/search/image traffic | Not verified; no real key was used for this delivery |
+| API 26/API 35, physical devices, camera/notification vendor differences | Not verified |
+| Release signing, store publication, medical compliance, security audit | Not verified and not promised |
+
+## Documentation and historical archive
+
+- Current user-facing material lives under docs/; start with the [documentation index](docs/文档索引.md).
+- Root-level 01_–19_ research, planning, and acceptance files plus Luna_Max_药物健康助手_调研任务书.md are preserved historical internal archives, not current product promises. This change does not delete or rewrite that evidence.
+- Luna Max remains only in historical/internal and compatibility naming. The public product name is Personal Medication Assistant; the package name is not changed as part of documentation governance.
 
 ## License
 
-This project is released under the [MIT License](LICENSE). Third-party interface boundaries are recorded in [Third-party notice](docs/第三方声明.md). This is a personal health-record tool, not a medical diagnostic product.
+Released under the [MIT License](LICENSE). See [CONTRIBUTING.md](CONTRIBUTING.md) and [SECURITY.md](SECURITY.md) for contribution and security boundaries. This is a personal health-record tool, not a medical diagnostic product.
