@@ -44,6 +44,10 @@ jobs:
                   target = raw.strip().split("#", 1)[0].strip("<>")
                   if not target or target.startswith(("http://", "https://", "mailto:")):
                       continue
+                  # Historical reports may preserve machine-local Windows paths in
+                  # angle brackets; they are evidence, not repository links.
+                  if re.match(r"^[A-Za-z]:[\\/]", target) or target.startswith(("\\\\", "/")):
+                      continue
                   candidate = (page.parent / target).resolve()
                   if not candidate.exists():
                       missing.append(f"{page}: {raw}")
