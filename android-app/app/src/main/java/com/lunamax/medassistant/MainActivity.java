@@ -69,6 +69,7 @@ public final class MainActivity extends AppCompatActivity {
     private ReminderScheduler scheduler;
     private AssistantRepository assistant;
     private VisionRepository vision;
+    private ProviderProfileRepository providers;
     private int currentTab = TAB_TODAY;
     private boolean changingTab;
 
@@ -79,6 +80,7 @@ public final class MainActivity extends AppCompatActivity {
         scheduler = new ReminderScheduler(this, database);
         assistant = new AssistantRepository(this);
         vision = new VisionRepository(this);
+        providers = new ProviderProfileRepository(this, database);
         binding = ActivityMainBinding.inflate(getLayoutInflater());
         setContentView(binding.getRoot());
         configureSystemBars();
@@ -149,6 +151,7 @@ public final class MainActivity extends AppCompatActivity {
     ReminderScheduler scheduler() { return scheduler; }
     AssistantRepository assistant() { return assistant; }
     VisionRepository vision() { return vision; }
+    ProviderProfileRepository providers() { return providers; }
 
     void feedback(String message) {
         Toast.makeText(this, message == null ? "" : message, Toast.LENGTH_LONG).show();

@@ -21,7 +21,7 @@ import java.util.Map;
 /** Local store for the complete product model. Free-text fields are encrypted with Android Keystore. */
 final class LunaDatabase extends SQLiteOpenHelper {
     private static final String NAME = "luna_max_local.db";
-    private static final int VERSION = 6;
+    private static final int VERSION = 7;
     private final SimpleDateFormat dayFormat = new SimpleDateFormat("yyyy-MM-dd", Locale.US);
     private final DataCipher cipher;
 
@@ -30,10 +30,11 @@ final class LunaDatabase extends SQLiteOpenHelper {
         cipher = new DataCipher(context);
     }
 
-    @Override public void onCreate(SQLiteDatabase db) { createTables(db); }
+    @Override public void onCreate(SQLiteDatabase db) { createTables(db); createProviderTables(db); }
 
     @Override public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
         createTables(db);
+        createProviderTables(db);
         addColumn(db, "medication", "generic_name_enc", "TEXT"); addColumn(db, "medication", "brand_name_enc", "TEXT");
         addColumn(db, "medication", "ingredient_enc", "TEXT"); addColumn(db, "medication", "strength_enc", "TEXT");
         addColumn(db, "medication", "dosage_form_enc", "TEXT"); addColumn(db, "medication", "manufacturer_enc", "TEXT");
@@ -67,6 +68,11 @@ final class LunaDatabase extends SQLiteOpenHelper {
     private static void createAssistantTables(SQLiteDatabase db) {
         db.execSQL("CREATE TABLE IF NOT EXISTS assistant_session (id INTEGER PRIMARY KEY AUTOINCREMENT, title_enc TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, deleted INTEGER NOT NULL DEFAULT 0)");
         db.execSQL("CREATE TABLE IF NOT EXISTS assistant_message (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id INTEGER NOT NULL, role TEXT NOT NULL, content_enc TEXT NOT NULL, sources_enc TEXT, created_at INTEGER NOT NULL, FOREIGN KEY(session_id) REFERENCES assistant_session(id))");
+    }
+
+    private static void createProviderTables(SQLiteDatabase db) {
+        db.execSQL("CREATE TABLE IF NOT EXISTS ai_provider (id TEXT PRIMARY KEY NOT NULL, display_name TEXT NOT NULL, kind TEXT NOT NULL, protocol TEXT NOT NULL, base_url TEXT NOT NULL, model_id TEXT NOT NULL, supports_text INTEGER NOT NULL DEFAULT 1, supports_image INTEGER NOT NULL DEFAULT 0, supports_reasoning INTEGER NOT NULL DEFAULT 0, fast_effort TEXT NOT NULL DEFAULT 'off', deep_effort TEXT NOT NULL DEFAULT 'high', max_effort TEXT NOT NULL DEFAULT 'max', auth_mode TEXT NOT NULL DEFAULT 'BEARER', anthropic_version TEXT NOT NULL DEFAULT '2023-06-01', connect_timeout_ms INTEGER NOT NULL DEFAULT 15000, read_timeout_ms INTEGER NOT NULL DEFAULT 30000, use_developer_role INTEGER NOT NULL DEFAULT 0, max_tokens_field TEXT NOT NULL DEFAULT 'MAX_TOKENS', reasoning_mode TEXT NOT NULL DEFAULT 'NONE', image_input_enabled INTEGER NOT NULL DEFAULT 0, test_state TEXT NOT NULL DEFAULT 'NOT_TESTED', last_test_at INTEGER NOT NULL DEFAULT 0, last_test_type TEXT NOT NULL DEFAULT '', last_error_code TEXT NOT NULL DEFAULT '', is_default INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)");
+        db.execSQL("CREATE TABLE IF NOT EXISTS ai_search_profile (id TEXT PRIMARY KEY NOT NULL, name TEXT NOT NULL, type TEXT NOT NULL, provider_id TEXT NOT NULL DEFAULT '', base_url TEXT NOT NULL DEFAULT '', model_id TEXT NOT NULL DEFAULT '', auth_mode TEXT NOT NULL DEFAULT 'BEARER', max_uses INTEGER NOT NULL DEFAULT 5, test_state TEXT NOT NULL DEFAULT 'NOT_TESTED', last_test_at INTEGER NOT NULL DEFAULT 0, last_error_code TEXT NOT NULL DEFAULT '', enabled INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)");
     }
 
     private static void addColumn(SQLiteDatabase db, String table, String column, String definition) { try { db.execSQL("ALTER TABLE " + table + " ADD COLUMN " + column + " " + definition); } catch (Exception ignored) { } }
@@ -159,6 +165,113 @@ final class LunaDatabase extends SQLiteOpenHelper {
     String setting(String name){try(Cursor c=getReadableDatabase().rawQuery("SELECT value_enc FROM setting WHERE name=?",new String[]{name})){return c.moveToFirst()?cipher.decrypt(c.getString(0)):"";}}
     void deleteSetting(String name){getWritableDatabase().delete("setting","name=?",new String[]{name});}
 
+    void saveProviderProfile(ProviderProfile profile) {
+        ContentValues v = new ContentValues();
+        v.put("id", profile.id); v.put("display_name", profile.displayName); v.put("kind", profile.kind);
+        v.put("protocol", profile.protocol); v.put("base_url", profile.baseUrl); v.put("model_id", profile.modelId);
+        v.put("supports_text", profile.supportsText ? 1 : 0); v.put("supports_image", profile.supportsImage ? 1 : 0);
+        v.put("supports_reasoning", profile.supportsReasoning ? 1 : 0); v.put("fast_effort", profile.fastEffort);
+        v.put("deep_effort", profile.deepEffort); v.put("max_effort", profile.maxEffort); v.put("auth_mode", profile.authMode);
+        v.put("anthropic_version", profile.anthropicVersion); v.put("connect_timeout_ms", profile.connectTimeoutMs);
+        v.put("read_timeout_ms", profile.readTimeoutMs); v.put("use_developer_role", profile.useDeveloperRole ? 1 : 0);
+        v.put("max_tokens_field", profile.maxTokensField); v.put("reasoning_mode", profile.reasoningMode);
+        v.put("image_input_enabled", profile.imageInputEnabled ? 1 : 0); v.put("test_state", profile.testState);
+        v.put("last_test_at", profile.lastTestAt); v.put("last_test_type", profile.lastTestType);
+        v.put("last_error_code", profile.lastErrorCode); v.put("is_default", profile.isDefault ? 1 : 0);
+        v.put("created_at", profile.createdAt); v.put("updated_at", profile.updatedAt);
+        getWritableDatabase().insertWithOnConflict("ai_provider", null, v, SQLiteDatabase.CONFLICT_REPLACE);
+    }
+
+    ProviderProfile providerProfile(String id) {
+        if (id == null || id.trim().isEmpty()) return null;
+        try (Cursor c = getReadableDatabase().rawQuery("SELECT * FROM ai_provider WHERE id=?", new String[]{id})) {
+            return c.moveToFirst() ? readProvider(c) : null;
+        }
+    }
+
+    List<ProviderProfile> providerProfiles() {
+        List<ProviderProfile> result = new ArrayList<>();
+        try (Cursor c = getReadableDatabase().rawQuery("SELECT * FROM ai_provider ORDER BY is_default DESC, created_at ASC", null)) {
+            while (c.moveToNext()) result.add(readProvider(c));
+        }
+        return result;
+    }
+
+    ProviderProfile defaultProviderProfile() {
+        try (Cursor c = getReadableDatabase().rawQuery("SELECT * FROM ai_provider WHERE is_default=1 ORDER BY created_at LIMIT 1", null)) {
+            return c.moveToFirst() ? readProvider(c) : null;
+        }
+    }
+
+    void selectProvider(String id) {
+        SQLiteDatabase db = getWritableDatabase(); db.beginTransaction();
+        try {
+            ContentValues reset = new ContentValues(); reset.put("is_default", 0); db.update("ai_provider", reset, null, null);
+            ContentValues selected = new ContentValues(); selected.put("is_default", 1); selected.put("updated_at", System.currentTimeMillis());
+            db.update("ai_provider", selected, "id=?", new String[]{id}); db.setTransactionSuccessful();
+        } finally { db.endTransaction(); }
+    }
+
+    void markProviderTest(String id, String state, long at, String type, String errorCode) {
+        ContentValues v = new ContentValues(); v.put("test_state", state); v.put("last_test_at", at);
+        v.put("last_test_type", type == null ? "" : type); v.put("last_error_code", errorCode == null ? "" : errorCode);
+        v.put("updated_at", at); getWritableDatabase().update("ai_provider", v, "id=?", new String[]{id});
+    }
+
+    void deleteProviderProfile(String id) {
+        if (ProviderProfile.BUILTIN_DEEPSEEK_ID.equals(id)) return;
+        getWritableDatabase().delete("ai_provider", "id=?", new String[]{id});
+    }
+
+    void saveSearchProfile(SearchProfile profile) {
+        ContentValues v = new ContentValues(); v.put("id", profile.id); v.put("name", profile.name); v.put("type", profile.type);
+        v.put("provider_id", profile.providerId); v.put("base_url", profile.baseUrl); v.put("model_id", profile.modelId);
+        v.put("auth_mode", profile.authMode); v.put("max_uses", profile.maxUses); v.put("test_state", profile.testState);
+        v.put("last_test_at", profile.lastTestAt); v.put("last_error_code", profile.lastErrorCode); v.put("enabled", profile.enabled ? 1 : 0);
+        v.put("created_at", profile.createdAt); v.put("updated_at", profile.updatedAt);
+        getWritableDatabase().insertWithOnConflict("ai_search_profile", null, v, SQLiteDatabase.CONFLICT_REPLACE);
+    }
+
+    SearchProfile searchProfile(String id) {
+        if (id == null || id.trim().isEmpty()) return null;
+        try (Cursor c = getReadableDatabase().rawQuery("SELECT * FROM ai_search_profile WHERE id=?", new String[]{id})) {
+            return c.moveToFirst() ? readSearchProfile(c) : null;
+        }
+    }
+
+    List<SearchProfile> searchProfiles() {
+        List<SearchProfile> result = new ArrayList<>();
+        try (Cursor c = getReadableDatabase().rawQuery("SELECT * FROM ai_search_profile ORDER BY enabled DESC, created_at ASC", null)) {
+            while (c.moveToNext()) result.add(readSearchProfile(c));
+        }
+        return result;
+    }
+
+    void selectSearchProfile(String id) {
+        SQLiteDatabase db = getWritableDatabase(); db.beginTransaction();
+        try {
+            ContentValues reset = new ContentValues(); reset.put("enabled", 0); db.update("ai_search_profile", reset, null, null);
+            if (id != null && !id.isEmpty()) { ContentValues selected = new ContentValues(); selected.put("enabled", 1); selected.put("updated_at", System.currentTimeMillis()); db.update("ai_search_profile", selected, "id=?", new String[]{id}); }
+            db.setTransactionSuccessful();
+        } finally { db.endTransaction(); }
+    }
+
+    SearchProfile enabledSearchProfile() {
+        try (Cursor c = getReadableDatabase().rawQuery("SELECT * FROM ai_search_profile WHERE enabled=1 ORDER BY updated_at DESC LIMIT 1", null)) {
+            return c.moveToFirst() ? readSearchProfile(c) : null;
+        }
+    }
+
+    void markSearchTest(String id, String state, long at, String errorCode) {
+        ContentValues v = new ContentValues(); v.put("test_state", state); v.put("last_test_at", at); v.put("last_error_code", errorCode == null ? "" : errorCode); v.put("updated_at", at);
+        getWritableDatabase().update("ai_search_profile", v, "id=?", new String[]{id});
+    }
+
+    void deleteSearchProfile(String id) {
+        if (id == null || SearchProfile.NONE.equals(id)) return;
+        getWritableDatabase().delete("ai_search_profile", "id=?", new String[]{id});
+    }
+
     long createAssistantSession(String title){
         ContentValues values=new ContentValues();
         values.put("title_enc",cipher.encrypt(title==null?"新会话":title));
@@ -193,6 +306,34 @@ final class LunaDatabase extends SQLiteOpenHelper {
     private void updateOccurrence(SQLiteDatabase db,long id,String status,long action,long actual,long snooze,String note){ContentValues v=new ContentValues();v.put("status",status);v.put("action_at_ms",action);v.put("actual_at_ms",actual);v.put("snooze_until_ms",snooze);putEncrypted(v,"user_note_enc",note);if(snooze>0)v.put("scheduled_at_ms",snooze);db.update("occurrence",v,"id=?",new String[]{Long.toString(id)});}
     private static String day(long ms){return new SimpleDateFormat("yyyy-MM-dd",Locale.US).format(new java.util.Date(ms));}
     private static boolean contains(DocumentRow row,String q){return row.ocrText.toLowerCase(Locale.ROOT).contains(q)||row.correctedText.toLowerCase(Locale.ROOT).contains(q)||row.chapter.toLowerCase(Locale.ROOT).contains(q)||row.version.toLowerCase(Locale.ROOT).contains(q)||row.links.toLowerCase(Locale.ROOT).contains(q);}
+
+    private ProviderProfile readProvider(Cursor c) {
+        return ProviderProfile.builder().id(c.getString(c.getColumnIndexOrThrow("id")))
+                .displayName(c.getString(c.getColumnIndexOrThrow("display_name"))).kind(c.getString(c.getColumnIndexOrThrow("kind")))
+                .protocol(c.getString(c.getColumnIndexOrThrow("protocol"))).baseUrl(c.getString(c.getColumnIndexOrThrow("base_url")))
+                .modelId(c.getString(c.getColumnIndexOrThrow("model_id"))).supportsText(c.getInt(c.getColumnIndexOrThrow("supports_text")) != 0)
+                .supportsImage(c.getInt(c.getColumnIndexOrThrow("supports_image")) != 0).supportsReasoning(c.getInt(c.getColumnIndexOrThrow("supports_reasoning")) != 0)
+                .fastEffort(c.getString(c.getColumnIndexOrThrow("fast_effort"))).deepEffort(c.getString(c.getColumnIndexOrThrow("deep_effort")))
+                .maxEffort(c.getString(c.getColumnIndexOrThrow("max_effort"))).authMode(c.getString(c.getColumnIndexOrThrow("auth_mode")))
+                .anthropicVersion(c.getString(c.getColumnIndexOrThrow("anthropic_version"))).connectTimeoutMs(c.getInt(c.getColumnIndexOrThrow("connect_timeout_ms")))
+                .readTimeoutMs(c.getInt(c.getColumnIndexOrThrow("read_timeout_ms"))).useDeveloperRole(c.getInt(c.getColumnIndexOrThrow("use_developer_role")) != 0)
+                .maxTokensField(c.getString(c.getColumnIndexOrThrow("max_tokens_field"))).reasoningMode(c.getString(c.getColumnIndexOrThrow("reasoning_mode")))
+                .imageInputEnabled(c.getInt(c.getColumnIndexOrThrow("image_input_enabled")) != 0).testState(c.getString(c.getColumnIndexOrThrow("test_state")))
+                .lastTestAt(c.getLong(c.getColumnIndexOrThrow("last_test_at"))).lastTestType(c.getString(c.getColumnIndexOrThrow("last_test_type")))
+                .lastErrorCode(c.getString(c.getColumnIndexOrThrow("last_error_code"))).isDefault(c.getInt(c.getColumnIndexOrThrow("is_default")) != 0)
+                .createdAt(c.getLong(c.getColumnIndexOrThrow("created_at"))).updatedAt(c.getLong(c.getColumnIndexOrThrow("updated_at"))).build();
+    }
+
+    private SearchProfile readSearchProfile(Cursor c) {
+        return SearchProfile.builder().id(c.getString(c.getColumnIndexOrThrow("id")))
+                .name(c.getString(c.getColumnIndexOrThrow("name"))).type(c.getString(c.getColumnIndexOrThrow("type")))
+                .providerId(c.getString(c.getColumnIndexOrThrow("provider_id"))).baseUrl(c.getString(c.getColumnIndexOrThrow("base_url")))
+                .modelId(c.getString(c.getColumnIndexOrThrow("model_id"))).authMode(c.getString(c.getColumnIndexOrThrow("auth_mode")))
+                .maxUses(c.getInt(c.getColumnIndexOrThrow("max_uses"))).testState(c.getString(c.getColumnIndexOrThrow("test_state")))
+                .lastTestAt(c.getLong(c.getColumnIndexOrThrow("last_test_at"))).lastErrorCode(c.getString(c.getColumnIndexOrThrow("last_error_code")))
+                .enabled(c.getInt(c.getColumnIndexOrThrow("enabled")) != 0).createdAt(c.getLong(c.getColumnIndexOrThrow("created_at")))
+                .updatedAt(c.getLong(c.getColumnIndexOrThrow("updated_at"))).build();
+    }
 
     static final class MedicationDraft { String genericName="",brandName="",ingredients="",strength="",dosageForm="",manufacturer="",approvalNo="",indication="",contraindications="",notes="",imageUri="",status="ACTIVE"; JSONObject toJson()throws Exception{return new JSONObject().put("genericName",genericName).put("brandName",brandName).put("ingredients",ingredients).put("strength",strength).put("dosageForm",dosageForm).put("manufacturer",manufacturer).put("approvalNo",approvalNo).put("indication",indication).put("contraindications",contraindications).put("notes",notes).put("imageUri",imageUri).put("status",status);} static MedicationDraft fromJson(JSONObject o){MedicationDraft d=new MedicationDraft();d.genericName=o.optString("genericName");d.brandName=o.optString("brandName");d.ingredients=o.optString("ingredients");d.strength=o.optString("strength");d.dosageForm=o.optString("dosageForm");d.manufacturer=o.optString("manufacturer");d.approvalNo=o.optString("approvalNo");d.indication=o.optString("indication");d.contraindications=o.optString("contraindications");d.notes=o.optString("notes");d.imageUri=o.optString("imageUri");return d;} }
     static final class MedicationRow { final long id; final String genericName,brandName,ingredients,strength,dosageForm,manufacturer,approvalNo,indication,contraindications,notes,imageUri,status; MedicationRow(long id,String genericName,String brandName,String ingredients,String strength,String dosageForm,String manufacturer,String approvalNo,String indication,String contraindications,String notes,String imageUri,String status){this.id=id;this.genericName=genericName;this.brandName=brandName;this.ingredients=ingredients;this.strength=strength;this.dosageForm=dosageForm;this.manufacturer=manufacturer;this.approvalNo=approvalNo;this.indication=indication;this.contraindications=contraindications;this.notes=notes;this.imageUri=imageUri;this.status=status;} String displayName(){return !brandName.isEmpty()?brandName:(!genericName.isEmpty()?genericName:"未命名药品");} JSONObject toJson()throws Exception{MedicationDraft d=new MedicationDraft();d.genericName=genericName;d.brandName=brandName;d.ingredients=ingredients;d.strength=strength;d.dosageForm=dosageForm;d.manufacturer=manufacturer;d.approvalNo=approvalNo;d.indication=indication;d.contraindications=contraindications;d.notes=notes;d.imageUri=imageUri;d.status=status;return d.toJson().put("id",id);} }
