@@ -173,7 +173,7 @@ final class SecretStore {
         return new String(cipher.doFinal(ciphertext), StandardCharsets.UTF_8);
     }
 
-    private SecretKey key() throws Exception {
+    private synchronized SecretKey key() throws Exception {
         KeyStore store = KeyStore.getInstance(STORE);
         store.load(null);
         if (!store.containsAlias(API_ALIAS)) {
