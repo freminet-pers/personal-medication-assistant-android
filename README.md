@@ -30,6 +30,7 @@ $env:JAVA_HOME = 'C:\Program Files\Android\Android Studio\jbr'
 完整命令、Windows 中文路径单元测试 workaround、网关测试和外部验收门禁见 [构建说明](docs/构建说明.md)、[测试与已知限制](docs/测试与已知限制.md) 和 [第 17 轮验收报告](17_第四轮产品化重构验收报告.md)。
 
 默认 Debug APK：`android-app/app/build/outputs/apk/debug/app-debug.apk`。
+版本化交付副本：`个人用药助手-v0.3.0-debug.apk`（不纳入源码提交，供安装或 Release 附件使用）。
 
 ## 隐私与运行时 Key
 
