@@ -13,6 +13,7 @@ import java.util.concurrent.atomic.AtomicLong;
 /** Multimodal document drafts use the same selected Provider/model as chat. */
 final class VisionRepository {
     interface Callback { void success(VisionDraft draft); void failure(String message); }
+    interface CapabilityCallback { void success(String message); void failure(String message); }
     static final String PROMPT_VERSION = "multimodal-draft-v3";
 
     private final ProviderProfileRepository profiles;
@@ -57,6 +58,30 @@ final class VisionRepository {
                 if (!isCurrent(generation)) return;
                 callback.success(parseVision(response.raw.toString(), response.text, profile));
             } catch (Exception error) { if (isCurrent(generation)) callback.failure(friendlyError(error)); }
+        });
+    }
+
+    void testImageCapability(String providerId, CapabilityCallback callback) {
+        ProviderProfile stored = profiles.get(providerId);
+        if (stored == null) { callback.failure("Provider 不存在"); return; }
+        ProviderProfile profile = stored.toBuilder().supportsImage(true).imageInputEnabled(true).build();
+        long generation = currentGeneration();
+        execute(() -> {
+            try {
+                String key = profiles.readCredential(profile.id);
+                if (key == null || key.isEmpty()) throw new AiException("MISSING_CREDENTIAL", "未配置当前 Provider 的 API Key");
+                byte[] anonymousPng = Base64.decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", Base64.DEFAULT);
+                AiRequest request = AiRequest.builder().modelId(profile.modelId).systemPrompt("图片能力测试，只回复 IMAGE_OK，不提供医疗建议。")
+                        .userText("只回复 IMAGE_OK").image("image/png", Base64.encodeToString(anonymousPng, Base64.NO_WRAP)).maxTokens(32).build();
+                AiResponse response = TransportFactory.create(profile).send(request, key);
+                if (response.text.isEmpty()) throw new AiException("EMPTY_RESPONSE", "图片能力测试返回为空");
+                if (!isCurrent(generation)) return;
+                profiles.markImageTest(profile.id, "PASSED", ""); callback.success("图片能力测试通过 · " + profile.modelId);
+            } catch (Exception error) {
+                if (!isCurrent(generation)) return;
+                String code = error instanceof AiException ? ((AiException) error).code : "NETWORK";
+                profiles.markImageTest(profile.id, "FAILED", code); callback.failure(friendlyError(error));
+            }
         });
     }
 

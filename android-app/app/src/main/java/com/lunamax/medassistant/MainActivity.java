@@ -120,6 +120,7 @@ public final class MainActivity extends AppCompatActivity {
     }
 
     @Override public void onBackPressed() {
+        if (getSupportFragmentManager().findFragmentById(R.id.page_container) instanceof AiServicesFragment) { showTab(TAB_ASSISTANT); return; }
         if (currentTab != TAB_TODAY) { showTab(TAB_TODAY); return; }
         super.onBackPressed();
     }
@@ -144,6 +145,12 @@ public final class MainActivity extends AppCompatActivity {
             finally { changingTab = false; }
         }
         getSupportFragmentManager().beginTransaction().setReorderingAllowed(true).replace(R.id.page_container, fragment).commit();
+    }
+
+    void showAiServices() {
+        binding.topAppBar.setTitle("AI 服务");
+        binding.topAppBar.setSubtitle("Provider、图片能力与独立搜索");
+        getSupportFragmentManager().beginTransaction().setReorderingAllowed(true).replace(R.id.page_container, new AiServicesFragment()).commit();
     }
 
     Palette palette() { return palette; }
@@ -179,6 +186,9 @@ public final class MainActivity extends AppCompatActivity {
         form.setPadding(dp(8), dp(4), dp(8), dp(4));
         TextView intro = label("设置只影响本机提醒、外观和数据控制。API Key 永不进入备份。");
         form.addView(intro, margin(0, 0, 0, 8));
+        MaterialButton aiServices = button("管理 AI 服务");
+        aiServices.setOnClickListener(v -> { showAiServices(); });
+        form.addView(aiServices, margin(0, 0, 0, 6));
         MaterialButton notifications = button("管理通知权限");
         notifications.setOnClickListener(v -> requestNotifications());
         form.addView(notifications, margin(0, 0, 0, 6));

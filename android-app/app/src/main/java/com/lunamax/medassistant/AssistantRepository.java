@@ -73,8 +73,12 @@ final class AssistantRepository {
 
     private void execute(Runnable task) { synchronized (executorLock) { executor.execute(task); } }
 
-    void testConnection(ConnectionCallback callback) {
-        long generation = currentGeneration(); ProviderProfile profile = effectiveProvider();
+    void testConnection(ConnectionCallback callback) { testConnection(effectiveProvider().id, callback); }
+
+    void testConnection(String providerId, ConnectionCallback callback) {
+        long generation = currentGeneration(); ProviderProfile selected = profiles.get(providerId);
+        if (selected == null) { callback.failure("Provider 不存在"); return; }
+        ProviderProfile profile = selected.id.equals(effectiveProvider().id) ? effectiveProvider() : selected;
         execute(() -> {
             try {
                 if (!isCurrent(generation)) return;

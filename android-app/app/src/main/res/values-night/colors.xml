@@ -1,0 +1,12 @@
+<resources>
+    <color name="luna_ink_950">#F3F8F3</color>
+    <color name="luna_ink_500">#B1C6BC</color>
+    <color name="luna_paper_50">#10201D</color>
+    <color name="luna_paper_0">#172A26</color>
+    <color name="luna_teal_700">#78D5C4</color>
+    <color name="luna_teal_100">#245148</color>
+    <color name="luna_amber_700">#FFD37B</color>
+    <color name="luna_amber_100">#5A4216</color>
+    <color name="luna_red_700">#FFB4AB</color>
+    <color name="luna_red_100">#5A2526</color>
+</resources>

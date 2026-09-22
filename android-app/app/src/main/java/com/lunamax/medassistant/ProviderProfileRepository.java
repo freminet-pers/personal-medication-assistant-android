@@ -74,6 +74,10 @@ final class ProviderProfileRepository {
         database.markProviderTest(providerId, state, System.currentTimeMillis(), testType, errorCode);
     }
 
+    void markImageTest(String providerId, String state, String errorCode) {
+        database.markProviderImageTest(providerId, state, System.currentTimeMillis(), errorCode);
+    }
+
     void recordConnection(String providerId, String status) { secrets.recordConnection(providerId, status); }
 
     void delete(String providerId) {

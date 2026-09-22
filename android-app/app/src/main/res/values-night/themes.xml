@@ -1,6 +1,23 @@
 <resources>
     <style name="Theme.LunaMax" parent="Theme.Material3.DayNight.NoActionBar">
         <item name="android:fontFamily">sans</item>
+        <item name="colorPrimary">@color/luna_teal_700</item>
+        <item name="colorOnPrimary">@color/luna_ink_950</item>
+        <item name="colorPrimaryContainer">@color/luna_teal_100</item>
+        <item name="colorOnPrimaryContainer">@color/luna_ink_950</item>
+        <item name="colorSecondary">@color/luna_teal_700</item>
+        <item name="colorOnSecondary">@color/luna_ink_950</item>
+        <item name="colorSecondaryContainer">@color/luna_teal_100</item>
+        <item name="colorOnSecondaryContainer">@color/luna_ink_950</item>
+        <item name="colorTertiary">@color/luna_amber_700</item>
+        <item name="colorSurface">@color/luna_ink_950</item>
+        <item name="colorSurfaceVariant">@color/luna_ink_500</item>
+        <item name="colorOnSurface">@color/luna_paper_50</item>
+        <item name="colorOnSurfaceVariant">@color/luna_teal_100</item>
+        <item name="colorError">@color/luna_red_700</item>
+        <item name="colorOnError">@color/luna_ink_950</item>
+        <item name="colorErrorContainer">@color/luna_red_100</item>
+        <item name="colorOnErrorContainer">@color/luna_paper_50</item>
         <item name="android:windowLightStatusBar">false</item>
         <item name="android:statusBarColor">@color/luna_ink_950</item>
         <item name="android:navigationBarColor">@color/luna_ink_950</item>

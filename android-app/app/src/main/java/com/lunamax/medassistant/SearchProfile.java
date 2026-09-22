@@ -54,6 +54,13 @@ final class SearchProfile {
 
     boolean isNativeDeepSeek() { return DEEPSEEK_NATIVE.equals(type); }
 
+    Builder toBuilder() {
+        return new Builder().id(id).name(name).type(type).providerId(providerId).baseUrl(baseUrl)
+                .modelId(modelId).authMode(authMode).maxUses(maxUses).testState(testState)
+                .lastTestAt(lastTestAt).lastErrorCode(lastErrorCode).enabled(enabled)
+                .createdAt(createdAt).updatedAt(updatedAt);
+    }
+
     static final class Builder {
         private String id = UUID.randomUUID().toString();
         private String name = "自定义搜索服务";

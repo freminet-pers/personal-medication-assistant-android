@@ -218,6 +218,13 @@ final class LunaDatabase extends SQLiteOpenHelper {
         v.put("updated_at", at); getWritableDatabase().update("ai_provider", v, "id=?", new String[]{id});
     }
 
+    void markProviderImageTest(String id, String state, long at, String errorCode) {
+        ContentValues v = new ContentValues(); v.put("test_state", state); v.put("last_test_at", at); v.put("last_test_type", "IMAGE");
+        v.put("last_error_code", errorCode == null ? "" : errorCode); v.put("supports_image", "PASSED".equals(state) ? 1 : 0);
+        v.put("image_input_enabled", "PASSED".equals(state) ? 1 : 0); v.put("updated_at", at);
+        getWritableDatabase().update("ai_provider", v, "id=?", new String[]{id});
+    }
+
     void deleteProviderProfile(String id) {
         if (ProviderProfile.BUILTIN_DEEPSEEK_ID.equals(id)) return;
         getWritableDatabase().delete("ai_provider", "id=?", new String[]{id});
