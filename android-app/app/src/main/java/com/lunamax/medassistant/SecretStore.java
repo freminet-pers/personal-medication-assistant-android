@@ -125,6 +125,7 @@ final class SecretStore {
         String legacy = preferences.getString(LEGACY_API_KEY, "");
         if (legacy.isEmpty()) return "";
         try {
+            if (!legacy.startsWith("v1:")) throw new IllegalStateException("LEGACY_KEY_CORRUPT");
             String recovered = legacyCipher.decryptStrict(legacy);
             if (recovered == null || recovered.trim().isEmpty()) throw new IllegalStateException("LEGACY_KEY_EMPTY");
             save(recovered);
