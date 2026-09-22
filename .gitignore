@@ -14,6 +14,7 @@ APK/
 *.trace
 screenshots/
 captures/
+.codex-remote-attachments/
 
 # Secrets and machine-local configuration
 .env
@@ -35,4 +36,3 @@ credentials/
 .DS_Store
 Thumbs.db
 desktop.ini
-
