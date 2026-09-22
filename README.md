@@ -81,7 +81,7 @@ v0.4.0 支持 OpenAI Chat Completions、OpenAI Responses 和 Anthropic Messages 
 ## 文档与历史档案
 
 - 面向使用者的当前文档在 docs/；从[文档索引](docs/文档索引.md)开始。
-- 根目录的 01_–19_ 调研、计划和验收文件，以及 Luna_Max_药物健康助手_调研任务书.md，是保留的历史内部档案，不是当前产品承诺；本次未删除或伪造改写它们。
+- 原根目录的 01_–19_ 调研、计划和验收文件，以及 Luna_Max_药物健康助手_调研任务书.md，现已按 research / plans / validation 移入 docs/archive/；内容与 Git 历史语义保留，不是当前产品承诺。
 - Luna Max 只出现在历史内部档案和兼容命名中；公开产品名是“个人用药助手 / Personal Medication Assistant”，包名暂不因展示治理而变更。
 
 ## 许可证

@@ -81,7 +81,7 @@ The source build uses Android Studio JDK 17, Android SDK platform 35, Build Tool
 ## Documentation and historical archive
 
 - Current user-facing material lives under docs/; start with the [documentation index](docs/文档索引.md).
-- Root-level 01_–19_ research, planning, and acceptance files plus Luna_Max_药物健康助手_调研任务书.md are preserved historical internal archives, not current product promises. This change does not delete or rewrite that evidence.
+- The former root-level 01_–19_ research, planning, and acceptance files plus Luna_Max_药物健康助手_调研任务书.md now live under docs/archive/ as research / plans / validation. Their content and Git history semantics are preserved; they are not current product promises.
 - Luna Max remains only in historical/internal and compatibility naming. The public product name is Personal Medication Assistant; the package name is not changed as part of documentation governance.
 
 ## License
