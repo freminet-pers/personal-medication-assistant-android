@@ -1,0 +1,29 @@
+name: Privacy or data-boundary report
+description: Report an unexpected data flow or retention concern without disclosing private data
+title: "[Privacy] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not paste API keys, personal health information, databases, screenshots, or unredacted logs. If this may be a vulnerability, stop and follow SECURITY.md for private reporting.
+  - type: textarea
+    id: report
+    attributes:
+      label: What data boundary was unexpected?
+      description: Describe the observable flow using anonymous or mock data only.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Sanitized reproduction
+      description: Include version, device/API, mock endpoint or redacted host, and steps.
+    validations:
+      required: true
+  - type: checkboxes
+    id: redaction
+    attributes:
+      label: Redaction check
+      options:
+        - label: I removed keys, health data, database files, private URLs, and identifying screenshots.
+          required: true

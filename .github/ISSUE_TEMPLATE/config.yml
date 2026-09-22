@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/freminet-pers/personal-medication-assistant-android/security/advisories/new
+    about: Use private security advisory reporting. Do not disclose vulnerability details in a public issue.
+  - name: Urgent medical concern
+    url: https://github.com/freminet-pers/personal-medication-assistant-android
+    about: This project is not a medical support channel; contact local emergency services or a qualified clinician.

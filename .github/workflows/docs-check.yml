@@ -1,0 +1,58 @@
+name: Documentation checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  docs:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Parse workflow and issue-form YAML
+        shell: bash
+        run: |
+          set -euo pipefail
+          ruby -e 'require "yaml"; Dir[".github/workflows/*.yml", ".github/ISSUE_TEMPLATE/*.yml"].each { |path| YAML.load_file(path, aliases: true); puts path }'
+
+      - name: Check current-document Markdown links
+        shell: bash
+        run: |
+          python - <<'PY'
+          import re
+          from pathlib import Path
+
+          pages = [
+              Path("README.md"),
+              Path("README_EN.md"),
+              Path("CONTRIBUTING.md"),
+              Path("SECURITY.md"),
+              *Path("docs").rglob("*.md"),
+          ]
+          pattern = re.compile(r"(?<!!)\[[^\]]+\]\(([^)]+)\)")
+          missing = []
+          for page in pages:
+              text = page.read_text(encoding="utf-8")
+              for raw in pattern.findall(text):
+                  target = raw.strip().split("#", 1)[0].strip("<>")
+                  if not target or target.startswith(("http://", "https://", "mailto:")):
+                      continue
+                  # Historical reports may preserve machine-local Windows paths in
+                  # angle brackets; they are evidence, not repository links.
+                  if re.match(r"^[A-Za-z]:[\\/]", target) or target.startswith(("\\\\", "/")):
+                      continue
+                  candidate = (page.parent / target).resolve()
+                  if not candidate.exists():
+                      missing.append(f"{page}: {raw}")
+          if missing:
+              print("\\n".join(missing))
+              raise SystemExit("Broken relative Markdown link(s)")
+          print("Current-document relative Markdown links: OK")
+          PY

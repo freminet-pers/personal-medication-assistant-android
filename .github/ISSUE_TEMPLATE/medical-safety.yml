@@ -1,0 +1,33 @@
+name: Medical-safety boundary
+description: Report unsafe wording or a confirmation-gate problem
+title: "[Safety boundary] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This repository is not a medical support channel. For urgent symptoms, contact local emergency services or a qualified clinician. Do not include a person's health details or ask for diagnosis, treatment, or dose advice.
+  - type: dropdown
+    id: category
+    attributes:
+      label: Boundary category
+      options:
+        - Unsafe medical wording
+        - Missing source or uncertainty
+        - Confirmation gate or automatic-write concern
+        - Emergency disclaimer or routing
+    validations:
+      required: true
+  - type: textarea
+    id: report
+    attributes:
+      label: Sanitized report
+      description: Describe the screen, wording, version, and reproducible steps without private data.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence and proposed boundary
+      description: Link public sources when relevant. Do not provide personal medical advice.
+    validations:
+      required: false
