@@ -1,16 +1,22 @@
 # 个人用药助手 · v0.3.0
 
+[简体中文](README.md) | [English](README_EN.md)
+
 一个本地优先的 Android 用药记录与提醒应用：今日计划、药物/批次/库存、资料草稿、健康档案和可审计的 AI 助手分成五个页面。`applicationId` 保持 `com.lunamax.medassistant`，当前 Debug 构建为 versionCode 3 / versionName 0.3.0。
 
 ## 页面预览
 
 截图来自 API 36.1 AVD，使用匿名 demo 药物记录；不含真实 Key 或个人健康资料。
 
-![今日](docs/screenshots/v0.3-today.png)
-![药物](docs/screenshots/v0.3-medications.png)
-![资料](docs/screenshots/v0.3-documents.png)
-![健康](docs/screenshots/v0.3-health.png)
-![助手](docs/screenshots/v0.3-assistant.png)
+<p align="center">
+  <a href="docs/screenshots/v0.3-today.png"><img src="docs/screenshots/v0.3-today.png" width="200" alt="今日计划与提醒"></a>
+  <a href="docs/screenshots/v0.3-medications.png"><img src="docs/screenshots/v0.3-medications.png" width="200" alt="药物、批次与库存"></a>
+  <a href="docs/screenshots/v0.3-documents.png"><img src="docs/screenshots/v0.3-documents.png" width="200" alt="资料草稿与识别队列"></a>
+</p>
+<p align="center">
+  <a href="docs/screenshots/v0.3-health.png"><img src="docs/screenshots/v0.3-health.png" width="200" alt="健康档案与指标"></a>
+  <a href="docs/screenshots/v0.3-assistant.png"><img src="docs/screenshots/v0.3-assistant.png" width="200" alt="AI 助手与 Key 管理"></a>
+</p>
 
 ## 核心边界
 
@@ -31,7 +37,8 @@ $env:JAVA_HOME = 'C:\Program Files\Android\Android Studio\jbr'
 
 默认 Debug APK：`android-app/app/build/outputs/apk/debug/app-debug.apk`。
 版本化交付副本：`个人用药助手-v0.3.0-debug.apk`（不纳入源码提交，供安装或 Release 附件使用）。
-最终 GitHub 仓库：`freminet-pers/personal-medication-assistant-android`（私有验收后再公开）。
+最终 GitHub 仓库：[freminet-pers/personal-medication-assistant-android](https://github.com/freminet-pers/personal-medication-assistant-android)（私有审计通过后公开）。
+Release 下载：[v0.3.0 Release](https://github.com/freminet-pers/personal-medication-assistant-android/releases/tag/v0.3.0)。
 
 ## 隐私与运行时 Key
 
@@ -39,4 +46,4 @@ $env:JAVA_HOME = 'C:\Program Files\Android\Android Studio\jbr'
 
 ## 许可证与第三方
 
-DeepSeek Harness 接口边界和固定审计提交见 [第三方声明](docs/第三方声明.md)。本项目是个人健康记录工具，不提供医疗诊断。
+本项目使用 [MIT License](LICENSE)。DeepSeek Harness 接口边界和固定审计提交见 [第三方声明](docs/第三方声明.md)。本项目是个人健康记录工具，不提供医疗诊断。
