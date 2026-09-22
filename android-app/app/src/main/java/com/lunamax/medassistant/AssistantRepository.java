@@ -4,6 +4,7 @@ import android.content.Context;
 import
         java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicLong;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -35,7 +36,9 @@ final class AssistantRepository {
     private final SecretStore secrets;
     private final DeepSeekTransport transport;
     private final HarnessSearchClient search;
-    private final ExecutorService executor = Executors.newSingleThreadExecutor();
+    private final Object executorLock = new Object();
+    private final AtomicLong requestGeneration = new AtomicLong();
+    private ExecutorService executor = Executors.newSingleThreadExecutor();
 
     AssistantRepository(Context context) {
         secrets = new SecretStore(context);
@@ -50,9 +53,27 @@ final class AssistantRepository {
     void saveKey(String value) { secrets.save(value); }
     void deleteKey() { secrets.delete(); }
 
+    /** Invalidate callbacks and interrupt work before the user wipes local data. */
+    void cancelPending() {
+        requestGeneration.incrementAndGet();
+        synchronized (executorLock) {
+            executor.shutdownNow();
+            executor = Executors.newSingleThreadExecutor();
+        }
+    }
+
+    long currentGeneration() { return requestGeneration.get(); }
+    boolean isCurrent(long generation) { return requestGeneration.get() == generation; }
+
+    private void execute(Runnable task) {
+        synchronized (executorLock) { executor.execute(task); }
+    }
+
     void testConnection(ConnectionCallback callback) {
-        executor.execute(() -> {
+        long generation = currentGeneration();
+        execute(() -> {
             try {
+                if (!isCurrent(generation)) return;
                 String key = readKey();
                 JSONObject body = new JSONObject()
                         .put("model", DeepSeekTransport.TEXT_MODEL)
@@ -64,10 +85,12 @@ final class AssistantRepository {
                 if (extractMessageText(payload).isEmpty()) {
                     throw new DeepSeekTransport.DeepSeekException("INVALID_RESPONSE", "连接成功但返回内容为空");
                 }
+                if (!isCurrent(generation)) return;
                 String message = "连接成功 · " + DeepSeekTransport.TEXT_MODEL;
                 secrets.recordConnection(message);
                 callback.success(message);
             } catch (Exception error) {
+                if (!isCurrent(generation)) return;
                 String message = friendlyError(error);
                 secrets.recordConnection(message);
                 callback.failure(message);
@@ -77,8 +100,10 @@ final class AssistantRepository {
 
     void answer(String question, String personalDataUsed, String effort, boolean webSearch, Callback callback) {
         String selected = normalizeEffort(effort);
-        executor.execute(() -> {
+        long generation = currentGeneration();
+        execute(() -> {
             try {
+                if (!isCurrent(generation)) return;
                 String key = readKey();
                 JSONArray sources = new JSONArray();
                 if (webSearch) sources = search.search(question, key);
@@ -95,6 +120,7 @@ final class AssistantRepository {
                 else body.put("output_config", new JSONObject().put("effort", selected));
                 JSONObject payload = transport.postMessages(key, body);
                 StructuredAnswer structured = parseStructuredAnswer(extractMessageText(payload));
+                if (!isCurrent(generation)) return;
                 callback.success(new Response(structured.answer, sources, personalDataUsed, selected,
                         structured.evidence, structured.uncertainty));
             } catch (Exception error) {
@@ -170,7 +196,7 @@ final class AssistantRepository {
     }
 
     private static String friendlyError(Exception error) {
-        if (error instanceof DeepSeekTransport.DeepSeekException) return error.getMessage();
+        if (error instanceof DeepSeekTransport.DeepSeekException) return redact(error.getMessage());
         String message = error.getMessage();
         return message == null || message.isEmpty() ? "请求失败：请稍后重试" : redact(message);
     }

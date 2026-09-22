@@ -33,12 +33,18 @@ final class DeepSeekTransport {
         if (value == null || value.trim().isEmpty()) return;
         try {
             URL url = new URL(value.trim());
-            boolean officialMessages = "https".equalsIgnoreCase(url.getProtocol())
-                    && "api.deepseek.com".equalsIgnoreCase(url.getHost());
+            String path = url.getPath().replaceAll("/+$", "");
+            boolean safeUrlShape = url.getUserInfo() == null && url.getQuery() == null && url.getRef() == null;
+            boolean officialMessages = safeUrlShape
+                    && "https".equalsIgnoreCase(url.getProtocol())
+                    && "api.deepseek.com".equalsIgnoreCase(url.getHost())
+                    && (url.getPort() == -1 || url.getPort() == 443)
+                    && (path.isEmpty() || "/anthropic".equals(path) || "/anthropic/v1".equals(path));
             boolean loopback = "http".equalsIgnoreCase(url.getProtocol())
+                    && safeUrlShape
                     && ("127.0.0.1".equals(url.getHost()) || "localhost".equalsIgnoreCase(url.getHost()));
             if (!officialMessages && !loopback) return;
-            String root = value.replaceAll("/$", "");
+            String root = value.trim().replaceAll("/+$", "");
             if (root.endsWith("/anthropic/v1")) {
                 messagesBase = root;
                 chatBase = root.substring(0, root.length() - "/anthropic/v1".length());

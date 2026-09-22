@@ -231,6 +231,7 @@ public final class MainActivity extends AppCompatActivity {
                 .setNegativeButton("取消", null)
                 .setPositiveButton("删除全部", (d, w) -> {
                     boolean complete = true;
+                    assistant.cancelPending();
                     try { database.clearData(true); } catch (Exception error) { complete = false; }
                     try { assistant.deleteKey(); } catch (Exception error) { complete = false; }
                     try { new DataCipher(this).deleteKey(); } catch (Exception error) { complete = false; }
@@ -304,7 +305,14 @@ public final class MainActivity extends AppCompatActivity {
 
     String safeMessage(Exception error) {
         String value = error.getMessage();
-        return value == null || value.isEmpty() ? "请稍后重试" : value.replaceAll("(?i)(api[- ]?key|bearer)\\s*[:=]?\\s*\\S+", "$1 [已隐藏]");
+        return value == null || value.isEmpty() ? "请稍后重试" : redact(value);
+    }
+
+    private static String redact(String value) {
+        return value
+                .replaceAll("(?i)bearer\\s+\\S+", "Bearer [已隐藏]")
+                .replaceAll("(?i)(x-api-key|api[- ]?key)\\s*[:=]?\\s*\\S+", "$1 [已隐藏]")
+                .replaceAll("(?i)\\bsk-[A-Za-z0-9_-]{8,}\\b", "[已隐藏]");
     }
 
     void showMedicationEditor(LunaDatabase.MedicationRow existing) {
