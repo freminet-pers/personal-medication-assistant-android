@@ -9,4 +9,5 @@
     <color name="luna_amber_100">#FFF0C7</color>
     <color name="luna_red_700">#A33C3C</color>
     <color name="luna_red_100">#FCE3E1</color>
+    <color name="luna_border">#D7E1DB</color>
 </resources>

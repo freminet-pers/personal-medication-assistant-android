@@ -44,7 +44,7 @@ public final class AssistantFragment extends BaseFragment {
 
     private void refresh() {
         ProviderProfile provider = assistant().currentProvider(); boolean has = assistant().hasKey();
-        binding.assistantModel.setText(provider.displayName + " · " + provider.modelLabel());
+        binding.assistantModel.setText(provider.isBuiltIn() ? "DeepSeek · V4.1 Flash" : provider.displayName + " · " + provider.modelLabel());
         binding.assistantCapabilities.setText("能力：" + capability(provider.supportsText, "文字") + " · " + capability(provider.supportsImage && provider.imageInputEnabled, "图片") + " · " + searchLabel(provider));
         binding.assistantKeyStatus.setText("凭据：" + assistant().keyStatus()); binding.assistantKeyStatus.setTextColor(has ? palette().primary : palette().warning);
         binding.assistantConnectionStatus.setText(assistant().lastConnectionStatus());
@@ -94,7 +94,7 @@ public final class AssistantFragment extends BaseFragment {
 
     private static boolean searchReady(SearchProfile search, ProviderProfile provider) { return search != null && search.enabled && "PASSED".equals(search.testState) && !(SearchProfile.DEEPSEEK_NATIVE.equals(search.type) && !provider.isBuiltIn()); }
     private static String searchStatus(SearchProfile search, ProviderProfile provider) { if (search == null || !search.enabled) return "搜索：未配置 · 管理 AI 服务以添加独立 Search Profile"; if (SearchProfile.DEEPSEEK_NATIVE.equals(search.type) && !provider.isBuiltIn()) return "搜索：当前自定义模型不能复用 DeepSeek 官方搜索"; if ("PASSED".equals(search.testState)) return "搜索：已测试通过 · " + search.name; if ("FAILED".equals(search.testState)) return "搜索：测试失败 · 请在 AI 服务中重试"; return "搜索：已配置但未测试 · 先单独测试才会联网"; }
-    private static String searchLabel(ProviderProfile provider) { return "搜索能力按独立配置启用"; }
+    private static String searchLabel(ProviderProfile provider) { return "搜索：按独立配置启用"; }
     private static String capability(boolean enabled, String label) { return enabled ? label : label + "（未启用）"; }
     private static String value(android.widget.EditText field) { return field.getText() == null ? "" : field.getText().toString().trim(); }
     private static String effortCode(String value) { return "深入".equals(value) ? "high" : "最大".equals(value) ? "max" : "off"; }

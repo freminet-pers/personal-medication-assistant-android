@@ -14,6 +14,14 @@
         <item name="colorSurfaceVariant">@color/luna_paper_50</item>
         <item name="colorOnSurface">@color/luna_ink_950</item>
         <item name="colorOnSurfaceVariant">@color/luna_ink_500</item>
+        <item name="android:colorBackground">@color/luna_paper_50</item>
+        <item name="android:windowBackground">@color/luna_paper_50</item>
+        <item name="colorOutline">@color/luna_border</item>
+        <item name="colorOutlineVariant">@color/luna_border</item>
+        <item name="colorSurfaceContainer">@color/luna_paper_50</item>
+        <item name="colorSurfaceContainerLow">@color/luna_paper_50</item>
+        <item name="colorSurfaceContainerHigh">@color/luna_paper_0</item>
+        <item name="colorSurfaceContainerHighest">@color/luna_paper_0</item>
         <item name="colorError">@color/luna_red_700</item>
         <item name="colorOnError">@color/luna_paper_0</item>
         <item name="colorErrorContainer">@color/luna_red_100</item>

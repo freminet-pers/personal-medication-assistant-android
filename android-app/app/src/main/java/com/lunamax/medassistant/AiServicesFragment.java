@@ -1,5 +1,6 @@
 package com.lunamax.medassistant;
 
+import android.content.res.ColorStateList;
 import android.os.Bundle;
 import android.text.InputType;
 import android.view.Gravity;
@@ -120,7 +121,15 @@ public final class AiServicesFragment extends BaseFragment {
     private TextView cardTitle(String text) { TextView view = new TextView(requireContext()); view.setText(text); view.setTextColor(palette().text); view.setTextSize(17); view.setTypeface(null, android.graphics.Typeface.BOLD); return view; }
     private TextView sectionTitle(String text) { TextView view = cardTitle(text); view.setTextSize(15); view.setPadding(0, dp(6), 0, dp(4)); return view; }
     private TextView body(String text) { TextView view = new TextView(requireContext()); view.setText(text); view.setTextColor(palette().secondary); view.setTextSize(13); view.setLineSpacing(dp(2), 1f); return view; }
-    private MaterialButton button(String text, boolean primary) { MaterialButton view = new MaterialButton(requireContext()); view.setText(text); view.setAllCaps(false); view.setMinHeight(dp(48)); if (!primary) view.setTextColor(palette().primary); UiKit.press(view); return view; }
+    private MaterialButton button(String text, boolean primary) {
+        MaterialButton view = new MaterialButton(requireContext());
+        view.setText(text); view.setAllCaps(false); view.setMinHeight(dp(48));
+        view.setBackgroundTintList(ColorStateList.valueOf(primary ? palette().primary : palette().surface));
+        view.setTextColor(primary ? palette().white : palette().primary);
+        view.setStrokeWidth(primary ? 0 : dp(1));
+        view.setStrokeColor(ColorStateList.valueOf(palette().border));
+        UiKit.press(view); return view;
+    }
     @Override protected LinearLayout verticalForm() { LinearLayout form = new LinearLayout(requireContext()); form.setOrientation(LinearLayout.VERTICAL); return form; }
     private LinearLayout.LayoutParams margin(int l, int t, int r, int b) { LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(-1, -2); p.setMargins(dp(l), dp(t), dp(r), dp(b)); return p; }
     private LinearLayout.LayoutParams weight(int weight, int total) { LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(0, -2, weight); p.setMargins(dp(2), 0, dp(2), 0); return p; }
