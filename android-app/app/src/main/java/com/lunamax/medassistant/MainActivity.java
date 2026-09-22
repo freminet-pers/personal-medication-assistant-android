@@ -78,9 +78,9 @@ public final class MainActivity extends AppCompatActivity {
         palette = Palette.from(this);
         database = new LunaDatabase(this);
         scheduler = new ReminderScheduler(this, database);
-        assistant = new AssistantRepository(this);
-        vision = new VisionRepository(this);
         providers = new ProviderProfileRepository(this, database);
+        assistant = new AssistantRepository(this, providers);
+        vision = new VisionRepository(this, providers);
         binding = ActivityMainBinding.inflate(getLayoutInflater());
         setContentView(binding.getRoot());
         configureSystemBars();

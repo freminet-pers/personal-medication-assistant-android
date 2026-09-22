@@ -20,8 +20,6 @@ import javax.net.ssl.SSLException;
  */
 final class DeepSeekTransport {
     static final String TEXT_MODEL = "deepseek-flash";
-    /** @deprecated v0.4 uses one multimodal model; retained only for source compatibility during migration. */
-    @Deprecated static final String VISION_MODEL = TEXT_MODEL;
     static final String DEFAULT_MESSAGES_BASE = "https://api.deepseek.com/anthropic/v1";
     static final String DEFAULT_CHAT_BASE = "https://api.deepseek.com";
     static final String ANTHROPIC_VERSION = "2023-06-01";

@@ -9,7 +9,6 @@ import android.content.Context;
  */
 final class AiClient {
     static final String MODEL = DeepSeekTransport.TEXT_MODEL;
-    static final String VISION_MODEL = DeepSeekTransport.VISION_MODEL;
     static final String VISION_PROMPT_VERSION = VisionRepository.PROMPT_VERSION;
 
     interface Callback { void success(Response response); void failure(String message); }
@@ -47,6 +46,11 @@ final class AiClient {
     AiClient(Context context) {
         assistant = new AssistantRepository(context);
         vision = new VisionRepository(context);
+    }
+
+    AiClient(Context context, ProviderProfileRepository profiles) {
+        assistant = new AssistantRepository(context, profiles);
+        vision = new VisionRepository(context, profiles);
     }
 
     boolean hasKey() { return assistant.hasKey(); }

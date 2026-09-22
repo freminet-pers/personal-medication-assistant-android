@@ -39,7 +39,12 @@ final class EndpointResolver {
     static String searchEndpoint(String baseUrl, String type) {
         String base = normalizeBaseUrl(baseUrl);
         if (SearchProfile.OPENAI_RESPONSES_NATIVE.equals(type)) return base + "/responses";
-        if (SearchProfile.ANTHROPIC_NATIVE.equals(type) || SearchProfile.DEEPSEEK_NATIVE.equals(type)) {
+        if (SearchProfile.DEEPSEEK_NATIVE.equals(type)) {
+            if (base.endsWith("/anthropic/v1")) return base + "/messages";
+            if (base.endsWith("/anthropic")) return base + "/v1/messages";
+            return base + "/anthropic/v1/messages";
+        }
+        if (SearchProfile.ANTHROPIC_NATIVE.equals(type)) {
             return base.endsWith("/anthropic") ? base + "/v1/messages" : base + "/messages";
         }
         throw new IllegalArgumentException("不支持的搜索协议");

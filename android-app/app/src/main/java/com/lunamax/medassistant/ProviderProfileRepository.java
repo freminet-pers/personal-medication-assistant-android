@@ -27,6 +27,14 @@ final class ProviderProfileRepository {
         }
         database.selectProvider(database.defaultProviderProfile() == null
                 ? ProviderProfile.BUILTIN_DEEPSEEK_ID : database.defaultProviderProfile().id);
+        if (database.searchProfile("deepseek-native") == null) {
+            long now = System.currentTimeMillis();
+            database.saveSearchProfile(SearchProfile.builder().id("deepseek-native").name("DeepSeek 官方搜索")
+                    .type(SearchProfile.DEEPSEEK_NATIVE).providerId(ProviderProfile.BUILTIN_DEEPSEEK_ID)
+                    .baseUrl("https://api.deepseek.com/anthropic/v1").modelId("deepseek-flash")
+                    .authMode(ProviderProfile.AUTH_BOTH).maxUses(5).testState("NOT_TESTED")
+                    .enabled(false).createdAt(now).updatedAt(now).build());
+        }
         secrets.migrateLegacyToProvider(ProviderProfile.BUILTIN_DEEPSEEK_ID);
     }
 
@@ -65,6 +73,8 @@ final class ProviderProfileRepository {
     void markTest(String providerId, String state, String testType, String errorCode) {
         database.markProviderTest(providerId, state, System.currentTimeMillis(), testType, errorCode);
     }
+
+    void recordConnection(String providerId, String status) { secrets.recordConnection(providerId, status); }
 
     void delete(String providerId) {
         ProviderProfile profile = database.providerProfile(providerId);
