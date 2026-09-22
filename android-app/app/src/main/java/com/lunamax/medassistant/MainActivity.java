@@ -229,26 +229,34 @@ public final class MainActivity extends AppCompatActivity {
                 .setMessage("将删除药物、批次、计划、历史、健康档案、资料索引、本地会话和 API Key，无法撤销。")
                 .setNegativeButton("取消", null)
                 .setPositiveButton("删除全部", (d, w) -> {
-                    database.clearData(true);
-                    assistant.deleteKey();
-                    new DataCipher(this).deleteKey();
-                    deletePrivateDocuments();
+                    boolean complete = true;
+                    try { database.clearData(true); } catch (Exception error) { complete = false; }
+                    try { assistant.deleteKey(); } catch (Exception error) { complete = false; }
+                    try { new DataCipher(this).deleteKey(); } catch (Exception error) { complete = false; }
+                    try { if (!deletePrivateDocuments()) complete = false; } catch (Exception error) { complete = false; }
                     scheduler.rebuild();
                     showTab(TAB_TODAY);
-                    feedback("本机资料和 Key 已删除");
+                    feedback(complete ? "本机资料和 Key 已删除" : "已执行删除，但部分清理失败，请重试");
                 }).show();
     }
 
-    private void deletePrivateDocuments() {
+    private boolean deletePrivateDocuments() {
+        boolean complete = true;
         File dir = new File(getFilesDir(), "documents");
         File[] files = dir.listFiles();
-        if (files != null) for (File file : files) deleteTree(file);
-        if (dir.isDirectory()) dir.delete();
+        if (files != null) for (File file : files) if (!deleteTree(file)) complete = false;
+        if (dir.isDirectory() && !dir.delete() && dir.exists()) complete = false;
+        return complete;
     }
 
-    private void deleteTree(File file) {
-        if (file.isDirectory()) { File[] children = file.listFiles(); if (children != null) for (File child : children) deleteTree(child); }
-        file.delete();
+    private boolean deleteTree(File file) {
+        boolean complete = true;
+        if (file.isDirectory()) {
+            File[] children = file.listFiles();
+            if (children != null) for (File child : children) if (!deleteTree(child)) complete = false;
+        }
+        if (!file.delete() && file.exists()) complete = false;
+        return complete;
     }
 
     @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {

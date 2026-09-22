@@ -95,15 +95,22 @@ final class SecretStore {
     }
 
     void delete() {
+        Exception failure = null;
         try {
-            preferences.edit().remove(API_KEY).remove(LEGACY_API_KEY)
+            boolean committed = preferences.edit().remove(API_KEY).remove(LEGACY_API_KEY)
                     .remove(SELF_TEST).remove(LAST_STATUS).remove(LAST_AT).commit();
+            if (!committed) failure = new IllegalStateException("SECURE_STORAGE_PREFERENCE_CLEANUP_FAILED");
+        } catch (Exception error) {
+            failure = error;
+        }
+        try {
             KeyStore store = KeyStore.getInstance(STORE);
             store.load(null);
             if (store.containsAlias(API_ALIAS)) store.deleteEntry(API_ALIAS);
         } catch (Exception error) {
-            throw new IllegalStateException("SECURE_STORAGE_CLEANUP_FAILED", error);
+            if (failure == null) failure = error; else failure.addSuppressed(error);
         }
+        if (failure != null) throw new IllegalStateException("SECURE_STORAGE_CLEANUP_FAILED", failure);
     }
 
     void recordConnection(String status) {

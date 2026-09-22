@@ -75,7 +75,7 @@ final class DataCipher {
         }
     }
 
-    private SecretKey key() throws Exception {
+    private synchronized SecretKey key() throws Exception {
         KeyStore store = KeyStore.getInstance(STORE);
         store.load(null);
         if (!store.containsAlias(ALIAS)) generate(store, 256);

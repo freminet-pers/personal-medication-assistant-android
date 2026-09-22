@@ -77,20 +77,34 @@ final class LunaDatabase extends SQLiteOpenHelper {
                     long medicationId = c.getLong(0);
                     String name = c.getString(1) == null ? "" : c.getString(1);
                     String dose = c.getString(2) == null ? "" : c.getString(2);
-                    ContentValues medication = new ContentValues();
-                    putEncrypted(medication, "brand_name_enc", name);
-                    putEncrypted(medication, "strength_enc", dose);
-                    db.update("medication", medication, "id=?", new String[]{Long.toString(medicationId)});
                     double stock = c.getDouble(3);
                     String expiry = c.getString(4) == null ? "" : c.getString(4);
+                    boolean hasLegacyValues = !name.isEmpty() || !dose.isEmpty() || stock > 0 || !expiry.isEmpty();
+                    if (!hasLegacyValues) continue;
+                    ContentValues medication = new ContentValues();
+                    if (!name.isEmpty()) putEncrypted(medication, "brand_name_enc", name);
+                    if (!dose.isEmpty()) putEncrypted(medication, "strength_enc", dose);
+                    if (medication.size() > 0) {
+                        db.update("medication", medication, "id=?", new String[]{Long.toString(medicationId)});
+                    }
                     if (stock > 0 || !expiry.isEmpty()) {
                         BatchDraft batch = new BatchDraft(); batch.quantity = stock; batch.expiryDate = expiry;
                         ContentValues values = new ContentValues(); values.put("medication_id", medicationId); values.put("quantity", batch.quantity); values.put("state", "IN_STOCK"); values.put("created_at", System.currentTimeMillis()); values.put("updated_at", System.currentTimeMillis());
                         putEncrypted(values, "lot_no_enc", ""); putEncrypted(values, "quantity_unit_enc", "片"); putEncrypted(values, "production_date_enc", ""); putEncrypted(values, "expiry_date_enc", batch.expiryDate); putEncrypted(values, "opened_date_enc", ""); putEncrypted(values, "storage_location_enc", ""); putEncrypted(values, "storage_conditions_enc", ""); putEncrypted(values, "notes_enc", "由原型库存迁移"); putEncrypted(values, "image_uri_enc", ""); db.insert("batch", null, values);
                     }
+                    // The legacy columns are no longer read after migration. Clear them so
+                    // medication names, doses and expiry dates are not left in plaintext.
+                    ContentValues legacy = new ContentValues();
+                    legacy.put("name", "");
+                    legacy.put("dose", "");
+                    legacy.put("stock", 0);
+                    legacy.putNull("expiry");
+                    db.update("medication", legacy, "id=?", new String[]{Long.toString(medicationId)});
                 }
             }
-        } catch (Exception ignored) { }
+        } catch (Exception error) {
+            throw new IllegalStateException("DATABASE_MIGRATION_FAILED", error);
+        }
     }
     String today() { return dayFormat.format(new java.util.Date()); }
 
