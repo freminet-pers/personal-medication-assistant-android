@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android" xmlns:app="http://schemas.android.com/apk/res-auto" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginBottom="8dp" app:cardCornerRadius="18dp" app:cardElevation="1dp">
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:padding="14dp">
+        <TextView android:id="@+id/health_status" android:layout_width="match_parent" android:layout_height="wrap_content" android:textColor="@color/luna_teal_700" android:textSize="13sp" android:textStyle="bold" />
+        <TextView android:id="@+id/health_title" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="4dp" android:textColor="@color/luna_ink_950" android:textSize="16sp" android:textStyle="bold" />
+        <TextView android:id="@+id/health_detail" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="4dp" android:textColor="@color/luna_ink_500" android:textSize="14sp" />
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="6dp" android:gravity="end" android:orientation="horizontal">
+            <com.google.android.material.button.MaterialButton android:id="@+id/health_edit" style="@style/Widget.Material3.Button.TextButton" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="编辑" android:textAllCaps="false" />
+            <com.google.android.material.button.MaterialButton android:id="@+id/health_delete" style="@style/Widget.Material3.Button.TextButton" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="删除" android:textAllCaps="false" />
+        </LinearLayout>
+    </LinearLayout>
+</com.google.android.material.card.MaterialCardView>

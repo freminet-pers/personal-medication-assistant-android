@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:id="@+id/nav_today" android:icon="@drawable/ic_today" android:title="今日" />
+    <item android:id="@+id/nav_medications" android:icon="@drawable/ic_medication" android:title="药物" />
+    <item android:id="@+id/nav_documents" android:icon="@drawable/ic_documents" android:title="资料" />
+    <item android:id="@+id/nav_health" android:icon="@drawable/ic_health" android:title="健康" />
+    <item android:id="@+id/nav_assistant" android:icon="@drawable/ic_more" android:title="助手" />
+</menu>

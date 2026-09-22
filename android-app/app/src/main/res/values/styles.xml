@@ -1,0 +1,6 @@
+<resources>
+    <style name="TextAppearance.Luna.Title" parent="TextAppearance.Material3.TitleLarge">
+        <item name="android:textColor">@color/luna_ink_950</item>
+        <item name="android:fontFamily">sans</item>
+    </style>
+</resources>

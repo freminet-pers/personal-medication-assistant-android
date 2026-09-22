@@ -1,475 +1,449 @@
 package com.lunamax.medassistant;
 
 import android.Manifest;
-import android.app.AlertDialog;
-import android.app.Dialog;
-import android.content.res.ColorStateList;
+import androidx.appcompat.app.AlertDialog;
 import android.content.Intent;
-import android.content.ClipData;
 import android.content.pm.PackageManager;
-import android.graphics.Bitmap;
-import android.graphics.BitmapFactory;
 import android.graphics.Color;
-import android.graphics.Matrix;
-import android.graphics.Typeface;
-import android.graphics.pdf.PdfRenderer;
-import android.graphics.drawable.GradientDrawable;
-import android.graphics.drawable.RippleDrawable;
-import android.media.ExifInterface;
-import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
-import android.os.ParcelFileDescriptor;
-import android.provider.MediaStore;
 import android.provider.Settings;
 import android.text.InputType;
 import android.view.Gravity;
 import android.view.View;
-import android.view.WindowInsets;
+import android.view.Window;
 import android.widget.ArrayAdapter;
+import android.widget.AutoCompleteTextView;
 import android.widget.Button;
 import android.widget.CheckBox;
 import android.widget.EditText;
-import android.widget.ImageButton;
-import android.widget.ImageView;
 import android.widget.LinearLayout;
-import android.widget.ProgressBar;
 import android.widget.ScrollView;
-import android.widget.Spinner;
 import android.widget.TextView;
 import android.widget.Toast;
 
-import androidx.core.content.FileProvider;
+import androidx.annotation.NonNull;
+import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowCompat;
+import androidx.core.view.WindowInsetsCompat;
+import androidx.fragment.app.Fragment;
 
-import org.json.JSONArray;
+import com.google.android.material.button.MaterialButton;
+import com.google.android.material.dialog.MaterialAlertDialogBuilder;
+import com.google.android.material.textfield.TextInputEditText;
+import com.google.android.material.textfield.TextInputLayout;
+import com.lunamax.medassistant.databinding.ActivityMainBinding;
+
 import org.json.JSONObject;
 
-import java.io.File;
 import java.io.ByteArrayOutputStream;
+import java.io.File;
 import java.io.FileInputStream;
-import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.security.MessageDigest;
-import java.text.SimpleDateFormat;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.util.ArrayList;
-import java.util.Date;
 import java.util.List;
 import java.util.Locale;
 
-/** Complete local-first product surface. Each mutation has an explicit user action and confirmation. */
-public final class MainActivity extends android.app.Activity {
-    private static final String BACKUP_PREFIX = "PERSONAL_MED_BACKUP_V2\n";
-    private static final String LEGACY_BACKUP_PREFIX = "LUNA_MAX_BACKUP_V1\n";
-    private static final int REQ_CAMERA = 2001;
-    private static final int REQ_FILE = 2002;
-    private static final int REQ_EXPORT = 2003;
-    private static final int REQ_IMPORT = 2004;
+/** Single activity shell: system bars, five primary destinations and settings. */
+public final class MainActivity extends AppCompatActivity {
+    static final int TAB_TODAY = 0;
+    static final int TAB_MEDICATIONS = 1;
+    static final int TAB_DOCUMENTS = 2;
+    static final int TAB_HEALTH = 3;
+    static final int TAB_ASSISTANT = 4;
+    private static final int REQUEST_EXPORT = 3001;
+    private static final int REQUEST_IMPORT = 3002;
+    private static final int REQUEST_NOTIFICATIONS = 3003;
+    private static final String BACKUP_PREFIX = "PERSONAL_MED_BACKUP_V3\n";
+    private static final String LEGACY_BACKUP_PREFIX = "PERSONAL_MED_BACKUP_V2\n";
+    private static final String OLD_BACKUP_PREFIX = "LUNA_MAX_BACKUP_V1\n";
+
+    private ActivityMainBinding binding;
     private Palette palette;
     private LunaDatabase database;
     private ReminderScheduler scheduler;
-    private AiClient ai;
-    private LinearLayout content;
-    private TextView pageTitle;
-    private ScrollView scrollView;
-    private LinearLayout rootContainer;
-    private LinearLayout bottomNavigation;
-    private ImageButton backButton;
-    private LinearLayout feedbackBar;
-    private TextView feedbackText;
-    private Button feedbackAction;
-    private final List<View> navItems = new ArrayList<>();
-    private int currentPage = 0;
-    private boolean suppressPageAnimation;
-    private boolean connectionInFlight;
-    private boolean aiInFlight;
-    private Button assistantAskButton;
-    private TextView assistantStatus;
-    private static final int PAGE_MORE = 4;
-    private static final int PAGE_ASSISTANT = 10;
-    private static final int PAGE_SETTINGS = 11;
-    private static final int PAGE_ABOUT = 12;
-    private int restoredScrollY;
-    private File pendingCapture;
-    private Uri cameraOutputUri;
-    private final List<VisionSource> visionQueue = new ArrayList<>();
-    private int visionIndex;
-    private long activeVisionDocumentId;
-    private AiClient.VisionResult activeVisionResult;
+    private AssistantRepository assistant;
+    private VisionRepository vision;
+    private int currentTab = TAB_TODAY;
+    private boolean changingTab;
 
-    @Override public void onCreate(Bundle state) {
+    @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
-        restoredScrollY = state == null ? 0 : state.getInt("scrollY", 0);
         palette = Palette.from(this);
-        configureSystemBars();
         database = new LunaDatabase(this);
         scheduler = new ReminderScheduler(this, database);
-        ai = new AiClient(this);
-        buildShell();
+        assistant = new AssistantRepository(this);
+        vision = new VisionRepository(this);
+        binding = ActivityMainBinding.inflate(getLayoutInflater());
+        setContentView(binding.getRoot());
+        configureSystemBars();
+        ViewCompat.setOnApplyWindowInsetsListener(binding.shell, (view, insets) -> {
+            WindowInsetsCompat bars = insets;
+            int top = bars.getInsets(WindowInsetsCompat.Type.statusBars()).top;
+            int bottom = bars.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom;
+            view.setPadding(0, top, 0, bottom);
+            return insets;
+        });
+        binding.topAppBar.setOnMenuItemClickListener(item -> {
+            if (item.getItemId() == R.id.action_settings) { showSettings(); return true; }
+            return false;
+        });
+        binding.bottomNavigation.setOnItemSelectedListener(item -> {
+            if (changingTab) return true;
+            if (item.getItemId() == R.id.nav_today) showTab(TAB_TODAY);
+            else if (item.getItemId() == R.id.nav_medications) showTab(TAB_MEDICATIONS);
+            else if (item.getItemId() == R.id.nav_documents) showTab(TAB_DOCUMENTS);
+            else if (item.getItemId() == R.id.nav_health) showTab(TAB_HEALTH);
+            else showTab(TAB_ASSISTANT);
+            return true;
+        });
+        currentTab = state == null ? TAB_TODAY : state.getInt("currentTab", TAB_TODAY);
+        showTab(currentTab);
         scheduler.rebuild();
-        int restoredPage = state == null ? 0 : state.getInt("currentPage", 0);
-        if (restoredPage == 1) showMedications();
-        else if (restoredPage == 2) showDocuments();
-        else if (restoredPage == 3) showHealth();
-        else if (restoredPage == PAGE_MORE) showMore();
-        else if (restoredPage == PAGE_ASSISTANT) showAssistant();
-        else if (restoredPage == PAGE_SETTINGS) showSettings();
-        else if (restoredPage == PAGE_ABOUT) showAbout();
-        else showToday();
-        if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, 1001);
     }
 
-    @Override protected void onResume() { super.onResume(); if (database != null) { scheduler.rebuild(); if (currentPage == 0) { suppressPageAnimation = true; showToday(); } } }
+    @Override protected void onResume() {
+        super.onResume();
+        if (scheduler != null) scheduler.rebuild();
+    }
 
-    @Override protected void onSaveInstanceState(Bundle outState) { outState.putInt("currentPage", currentPage); if(scrollView!=null)outState.putInt("scrollY",scrollView.getScrollY()); super.onSaveInstanceState(outState); }
+    @Override protected void onSaveInstanceState(@NonNull Bundle outState) {
+        outState.putInt("currentTab", currentTab);
+        super.onSaveInstanceState(outState);
+    }
 
     @Override public void onBackPressed() {
-        if (currentPage == PAGE_ASSISTANT || currentPage == PAGE_SETTINGS || currentPage == PAGE_ABOUT) {
-            showMore();
-            return;
-        }
-        if (currentPage != 0) {
-            showToday();
-            return;
-        }
+        if (currentTab != TAB_TODAY) { showTab(TAB_TODAY); return; }
         super.onBackPressed();
     }
 
-    private void buildShell() {
-        getWindow().setStatusBarColor(palette.app); getWindow().setNavigationBarColor(palette.app);
-        rootContainer = new LinearLayout(this); rootContainer.setOrientation(LinearLayout.VERTICAL); rootContainer.setBackgroundColor(palette.app); rootContainer.setPadding(dp(16),dp(10),dp(16),0);
-        LinearLayout header = new LinearLayout(this); header.setGravity(Gravity.CENTER_VERTICAL);
-        backButton = iconButton(com.lunamax.medassistant.R.drawable.ic_arrow_back); backButton.setVisibility(View.GONE); backButton.setOnClickListener(v->onBackPressed());
-        header.addView(backButton,new LinearLayout.LayoutParams(dp(44),dp(48)));
-        LinearLayout brand = new LinearLayout(this); brand.setOrientation(LinearLayout.VERTICAL); brand.setGravity(Gravity.CENTER_VERTICAL);
-        brand.addView(text("个人用药助手",16,palette.text,true));
-        brand.addView(text("本地优先 · 轻量记录",11,palette.secondary,false));
-        header.addView(brand,new LinearLayout.LayoutParams(0,dp(52),1));
-        TextView badge=text("本地加密",11,palette.primary,true); badge.setGravity(Gravity.CENTER); badge.setBackground(round(palette.primarySoft,999)); badge.setPadding(dp(8),0,dp(8),0); header.addView(badge,new LinearLayout.LayoutParams(dp(74),dp(30)));
-        Button add=actionButton("添加",palette.primary,palette.white); add.setCompoundDrawablesWithIntrinsicBounds(com.lunamax.medassistant.R.drawable.ic_add,0,0,0); add.setOnClickListener(v->medicationEditor(null)); LinearLayout.LayoutParams ap=new LinearLayout.LayoutParams(dp(82),dp(46));ap.setMargins(dp(8),0,0,0);header.addView(add,ap);rootContainer.addView(header);
-        pageTitle = text("今天",24,palette.text,true); pageTitle.setPadding(0,dp(4),0,dp(8));
-        rootContainer.addView(pageTitle,new LinearLayout.LayoutParams(-1,dp(46)));
-        scrollView=new ScrollView(this);scrollView.setFillViewport(true);content=new LinearLayout(this);content.setOrientation(LinearLayout.VERTICAL);content.setPadding(0,0,0,dp(18));scrollView.addView(content,new ScrollView.LayoutParams(-1,-1));rootContainer.addView(scrollView,new LinearLayout.LayoutParams(-1,0,1));
-        feedbackBar = new LinearLayout(this); feedbackBar.setGravity(Gravity.CENTER_VERTICAL); feedbackBar.setPadding(dp(14),0,dp(8),0); feedbackBar.setBackground(round(palette.text,999)); feedbackBar.setVisibility(View.GONE);
-        feedbackText = text("",13,palette.surface,false); feedbackBar.addView(feedbackText,new LinearLayout.LayoutParams(0,dp(44),1));
-        feedbackAction = outlineButton("撤销",palette.surface); feedbackAction.setVisibility(View.GONE); feedbackBar.addView(feedbackAction,new LinearLayout.LayoutParams(dp(64),dp(36))); rootContainer.addView(feedbackBar,new LinearLayout.LayoutParams(-1,dp(46)));
-        bottomNavigation=new LinearLayout(this);bottomNavigation.setGravity(Gravity.CENTER);bottomNavigation.setPadding(dp(4),dp(4),dp(4),dp(8));bottomNavigation.setBackground(round(palette.surface,20));
-        String[] labels={"今日","药物","资料","健康","更多"};int[] icons={R.drawable.ic_today,R.drawable.ic_medication,R.drawable.ic_documents,R.drawable.ic_health,R.drawable.ic_more};
-        for(int i=0;i<labels.length;i++){final int page=i;View item=navItem(icons[i],labels[i]);item.setOnClickListener(v->{if(page==0)showToday();else if(page==1)showMedications();else if(page==2)showDocuments();else if(page==3)showHealth();else showMore();});navItems.add(item);bottomNavigation.addView(item,new LinearLayout.LayoutParams(0,dp(58),1));}
-        rootContainer.addView(bottomNavigation,new LinearLayout.LayoutParams(-1,dp(66)));setContentView(rootContainer);applySystemInsets();selectNav(0);scrollView.post(()->scrollView.scrollTo(0,restoredScrollY));
-    }
-
-    private void configureSystemBars(){if(Build.VERSION.SDK_INT>=30)getWindow().setDecorFitsSystemWindows(false);getWindow().setStatusBarColor(palette.app);getWindow().setNavigationBarColor(palette.app);int flags=0;if(!isDarkMode())flags|=View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;if(Build.VERSION.SDK_INT>=26&&!isDarkMode())flags|=View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;getWindow().getDecorView().setSystemUiVisibility(flags);}
-    private boolean isDarkMode(){return (getResources().getConfiguration().uiMode&android.content.res.Configuration.UI_MODE_NIGHT_MASK)==android.content.res.Configuration.UI_MODE_NIGHT_YES;}
-    private void applySystemInsets(){if(rootContainer==null)return;rootContainer.setOnApplyWindowInsetsListener((view,insets)->{int top,left,right,bottom;if(Build.VERSION.SDK_INT>=30){android.graphics.Insets bars=insets.getInsets(WindowInsets.Type.statusBars()|WindowInsets.Type.displayCutout()|WindowInsets.Type.navigationBars());android.graphics.Insets ime=insets.getInsets(WindowInsets.Type.ime());top=bars.top;left=bars.left;right=bars.right;bottom=Math.max(bars.bottom,ime.bottom);}else{top=insets.getSystemWindowInsetTop();left=insets.getSystemWindowInsetLeft();right=insets.getSystemWindowInsetRight();bottom=insets.getSystemWindowInsetBottom();}rootContainer.setPadding(dp(16)+left,dp(10)+top,dp(16)+right,0);if(bottomNavigation!=null)bottomNavigation.setPadding(0,dp(4),0,dp(8)+bottom);return insets;});rootContainer.requestApplyInsets();}
-    private void showMore(){
-        currentPage=PAGE_MORE;setPageTitle("更多");selectNav(4);content.removeAllViews();
-        LinearLayout access=card();access.addView(sectionLabel("常用入口"));
-        Button assistant=actionButton("AI 助手",palette.primary,palette.white);assistant.setOnClickListener(v->showAssistant());access.addView(assistant,mt(10));
-        Button settings=outlineButton("设置与隐私",palette.primary);settings.setOnClickListener(v->showSettings());access.addView(settings,mt(8));
-        Button about=outlineButton("关于与版本",palette.primary);about.setOnClickListener(v->showAbout());access.addView(about,mt(8));content.addView(access,mb(12));
-        LinearLayout note=card();note.addView(sectionLabel("使用边界"));note.addView(text("这是一个安静的个人健康日志：数据默认留在本机，模型只在你明确确认后参与。回答不替代医生诊断、处方或紧急就医。",14,palette.secondary,false),mt(8));content.addView(note,mb(12));animateContent();
-    }
-
-    private void showAbout(){
-        currentPage=PAGE_ABOUT;setPageTitle("关于  ·  构建信息");selectNav(4);content.removeAllViews();
-        LinearLayout build=card();build.addView(sectionLabel("个人用药助手"));
-        build.addView(text("安静的个人健康日志 · 本地优先",17,palette.text,true),mt(8));
-        build.addView(text("版本 "+BuildConfig.VERSION_NAME+"（构建 "+BuildConfig.VERSION_CODE+"）\n包名 "+getPackageName(),14,palette.secondary,false),mt(6));
-        build.addView(text("本版本保留原有本地数据库、applicationId 与签名身份。升级优先采用覆盖安装，已有药物、计划和资料索引不会因为换版而主动清空。",13,palette.secondary,false),mt(10));
-        content.addView(build,mb(12));
-        LinearLayout boundary=card();boundary.addView(sectionLabel("重要说明"));boundary.addView(text("用药提醒、库存和安全检查只反映你在本机记录的内容，不是完整临床决策系统。AI 内容必须逐字段核对；紧急症状请立即联系当地急救或专业医护人员。",14,palette.secondary,false),mt(8));content.addView(boundary,mb(12));animateContent();
-    }
-
-    private void configAssistant(){
-        selectNav(4);
-        LinearLayout config=card();config.addView(sectionLabel("连接与资料边界"));config.addView(text("模型配置：deepseek-flash",16,palette.text,true),mt(8));config.addView(text("Key 状态："+ai.keyStatus(),14,ai.hasKey()?palette.primary:palette.warning,false),mt(4));
-        Button key=outlineButton(ai.hasKey()?"更换或删除 Key":"输入运行时 Key",palette.primary);key.setOnClickListener(v->keyDialog());config.addView(key,mt(8));
-        Button test=outlineButton("测试连接",palette.primary);test.setOnClickListener(v->testAiConnection());config.addView(test,mt(8));
-        config.addView(text(ai.lastConnectionStatus(),12,palette.secondary,false),mt(6));content.addView(config,mb(12));
-        LinearLayout ask=card();ask.addView(sectionLabel("健康问题"));EditText question=input("只输入当前问题，不要粘贴完整身份证明",true);ask.addView(question,mt(8));
-        Spinner effort=new Spinner(this);effort.setAdapter(new ArrayAdapter<>(this,android.R.layout.simple_spinner_dropdown_item,new String[]{"快速","较低","标准","最高"}));ask.addView(effort,mt(8));
-        CheckBox web=new CheckBox(this);web.setText("需要官方 Web Search（会产生联网请求）");ask.addView(web,mt(4));
-        assistantStatus=text("回答会显示来源、证据等级和本次实际使用的本地资料。",12,palette.secondary,false);ask.addView(assistantStatus,mt(8));
-        assistantAskButton=actionButton("查看最小资料并发送",palette.primary,palette.white);assistantAskButton.setOnClickListener(v->{String q=question.getText().toString().trim();if(q.isEmpty()){question.setError("请先填写当前问题");question.requestFocus();return;}if(!ai.hasKey()){showFeedback("请先保存 DeepSeek Key");keyDialog();return;}String preview=personalPreview();new AlertDialog.Builder(this).setTitle("发送前确认").setMessage("本次将使用：\n"+preview+"\n\n不会发送：未相关健康字段、API Key、完整本地文档。确认后才会调用模型。").setNegativeButton("取消",null).setPositiveButton("确认发送",(d,w)->sendAi(q,effort.getSelectedItemPosition(),web.isChecked())).show();});ask.addView(assistantAskButton,mt(10));content.addView(ask,mb(12));
-        LinearLayout result=card();result.setTag("assistant_result");result.addView(text("尚未提问。结果会标注来源、证据等级与不确定性；没有网络或 Key 时只显示明确失败状态。",14,palette.secondary,false));content.addView(result);
-    }
-
-    private void buildSettings(){
-        selectNav(4);
-        LinearLayout reminder=card();reminder.addView(sectionLabel("提醒与计划"));reminder.addView(text("通知："+(Build.VERSION.SDK_INT<33||checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)==PackageManager.PERMISSION_GRANTED?"已允许":"未允许")+"\n精确闹钟："+(scheduler.canScheduleExact()?"可用":"未授权，当前使用非精确降级"),14,palette.secondary,false),mt(8));
-        Button exact=outlineButton("打开精确闹钟设置",palette.primary);exact.setOnClickListener(v->{Intent i=scheduler.exactAlarmSettingsIntent();if(i!=null)try{startActivity(i);}catch(Exception e){showFeedback("系统不支持直接跳转，请手动打开闹钟权限");}});reminder.addView(exact,mt(8));
-        Button rebuild=outlineButton("重建未来 30 天提醒",palette.primary);rebuild.setOnClickListener(v->{scheduler.rebuild();showFeedback("已重建未来 30 天提醒");});reminder.addView(rebuild,mt(8));content.addView(reminder,mb(12));
-        LinearLayout key=card();key.addView(sectionLabel("DeepSeek Key"));key.addView(text(ai.keyStatus()+"；Key 只保存在本机安全存储，保存动作不联网。",14,palette.secondary,false),mt(8));Button keyButton=outlineButton("管理 Key",palette.primary);keyButton.setOnClickListener(v->keyDialog());key.addView(keyButton,mt(8));Button testButton=outlineButton("测试连接",palette.primary);testButton.setOnClickListener(v->testAiConnection());key.addView(testButton,mt(8));key.addView(text(ai.lastConnectionStatus(),12,palette.secondary,false),mt(6));content.addView(key,mb(12));
-        LinearLayout data=card();data.addView(sectionLabel("本地数据"));data.addView(text("导出文件使用安全存储加密；导入会替换本机药物、批次、计划、健康记录和资料索引。",14,palette.secondary,false),mt(8));Button export=outlineButton("导出加密备份",palette.primary);export.setOnClickListener(v->startActivityForResult(new Intent(Intent.ACTION_CREATE_DOCUMENT).setType("application/octet-stream").putExtra(Intent.EXTRA_TITLE,"personal-medication-backup.pmb"),REQ_EXPORT));Button imp=outlineButton("导入加密备份",palette.primary);imp.setOnClickListener(v->startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT).setType("application/octet-stream").addCategory(Intent.CATEGORY_OPENABLE),REQ_IMPORT));data.addView(export,mt(8));data.addView(imp,mt(8));content.addView(data,mb(12));
-        Button about=outlineButton("查看关于与版本",palette.primary);about.setOnClickListener(v->showAbout());content.addView(about,mt(2));content.addView(infoCard("不提供账号、云同步或遥测。正式生产部署的网关仍需身份认证、限流、出口控制和脱敏日志。"),mb(12));
-    }
-
-    private void showTodayLegacy() {
-        currentPage=0; setPageTitle(todayLabel()+"  ·  用药状态"); selectNav(0); content.removeAllViews(); scheduler.rebuild(); List<LunaDatabase.OccurrenceRow> rows=database.todayOccurrences(System.currentTimeMillis()); int pending=0,missed=0;for(LunaDatabase.OccurrenceRow r:rows){if("PENDING".equals(r.status)||"SNOOZED".equals(r.status))pending++;if("MISSED".equals(r.status))missed++;}
-        LinearLayout summary=card();summary.addView(text("今天",13,palette.secondary,true));summary.addView(text(rows.isEmpty()?"还没有今天的计划":pending+" 项待确认 · "+missed+" 项漏服待处理",21,palette.text,true));summary.addView(text("计划时间、实际操作时间和状态都会保存在本机；没有批次库存时不会伪造扣减。",13,palette.secondary,false));content.addView(summary,mb(12));
-        if(rows.isEmpty()){content.addView(emptyCard("还没有今天的用药 occurrence\n去“药物”添加药品，再建立一个每日/每周/间隔计划。"),mb(12));}
-        for(LunaDatabase.OccurrenceRow row:rows){LinearLayout item=card();LinearLayout top=new LinearLayout(this);top.setGravity(Gravity.CENTER_VERTICAL);top.addView(text(formatTime(row.scheduledAtMs),22,palette.primary,true),new LinearLayout.LayoutParams(dp(76),dp(52)));LinearLayout name=new LinearLayout(this);name.setOrientation(LinearLayout.VERTICAL);name.addView(text(row.medicationName,16,palette.text,true));name.addView(text(row.dose+(row.meal.isEmpty()?"":" · "+row.meal),13,palette.secondary,false));top.addView(name,new LinearLayout.LayoutParams(0,dp(52),1));TextView state=text(statusLabel(row.status),12,statusColor(row.status),true);state.setGravity(Gravity.CENTER);state.setBackground(round(statusBackground(row.status),999));state.setPadding(dp(7),0,dp(7),0);top.addView(state,new LinearLayout.LayoutParams(dp(76),dp(30)));item.addView(top);
-            LinearLayout actions=new LinearLayout(this);actions.setGravity(Gravity.END);if("TAKEN".equals(row.status)){Button undo=outlineButton("撤销",palette.secondary);undo.setOnClickListener(v->{database.applyOccurrenceAction(row.id,ReminderScheduler.OP_UNDO,System.currentTimeMillis(),0,"用户撤销");scheduler.rebuild();showToday();});actions.addView(undo,new LinearLayout.LayoutParams(dp(84),dp(44)));}else{Button take=actionButton("已服用",palette.primary,palette.white);take.setOnClickListener(v->{database.applyOccurrenceAction(row.id,ReminderScheduler.OP_TAKEN,System.currentTimeMillis(),0,"今日操作");scheduler.rebuild();showToday();});Button skip=outlineButton("跳过",palette.secondary);skip.setOnClickListener(v->{database.applyOccurrenceAction(row.id,ReminderScheduler.OP_SKIP,System.currentTimeMillis(),0,"今日操作");scheduler.rebuild();showToday();});Button snooze=outlineButton("稍后",palette.secondary);snooze.setOnClickListener(v->{database.applyOccurrenceAction(row.id,ReminderScheduler.OP_SNOOZE,System.currentTimeMillis(),15*60*1000L,"用户稍后提醒");scheduler.rebuild();showToday();});actions.addView(take,new LinearLayout.LayoutParams(dp(90),dp(44)));actions.addView(skip,new LinearLayout.LayoutParams(dp(76),dp(44)));actions.addView(snooze,new LinearLayout.LayoutParams(dp(76),dp(44)));}item.addView(actions);content.addView(item,mb(10));}
-        LinearLayout safety=card();safety.addView(text("确定性安全检查",16,palette.text,true));List<SafetyEngine.Finding> findings=safetyFindings();safety.addView(text(findings.isEmpty()?"当前没有命中本机规则；这不等于临床上没有风险。":"命中 "+findings.size()+" 条需要核对的本机规则。",14,findings.isEmpty()?palette.secondary:palette.warning,false));Button inspect=outlineButton("查看规则结果",palette.primary);inspect.setOnClickListener(v->showFindings(findings));safety.addView(inspect,mt(8));content.addView(safety,mb(12));
-    }
-
-    private void showToday() {
-        currentPage=0;setPageTitle(todayLabel()+"  ·  用药状态");selectNav(0);content.removeAllViews();scheduler.rebuild();List<LunaDatabase.OccurrenceRow> rows=database.todayOccurrences(System.currentTimeMillis());int pending=0,missed=0,completed=0;for(LunaDatabase.OccurrenceRow row:rows){if("PENDING".equals(row.status)||"SNOOZED".equals(row.status))pending++;if("MISSED".equals(row.status))missed++;if("TAKEN".equals(row.status)||"SKIPPED".equals(row.status))completed++;}
-        LinearLayout summary=card();summary.addView(sectionLabel("今天的记录"));summary.addView(text(rows.isEmpty()?"还没有今天的用药计划":completed+" / "+rows.size()+" 项已处理",22,palette.text,true),mt(6));summary.addView(text(rows.isEmpty()?"先添加药物和提醒计划，今天的时间线会在这里出现":pending+" 项待处理"+(missed>0?" · "+missed+" 项漏服待处理":""),13,missed>0?palette.warning:palette.secondary,false),mt(3));ProgressBar progress=new ProgressBar(this,null,android.R.attr.progressBarStyleHorizontal);progress.setMax(Math.max(1,rows.size()));progress.setProgress(completed);progress.setProgressTintList(ColorStateList.valueOf(palette.primary));progress.setBackgroundTintList(ColorStateList.valueOf(palette.soft));summary.addView(progress,mt(10));content.addView(summary,mb(12));
-        if(rows.isEmpty()){LinearLayout empty=emptyCard("今天还没有用药记录。\n添加一个每日、每周、间隔或按需计划后，这里会成为你的时间线。","去药物页添加",v->showMedications());content.addView(empty,mb(12));}
-        String lastGroup="";int index=0;for(LunaDatabase.OccurrenceRow row:rows){String group=dayPart(row.scheduledAtMs);if(!group.equals(lastGroup)){content.addView(text(group,13,palette.secondary,true),mb(4));lastGroup=group;}LinearLayout item=card();if("TAKEN".equals(row.status)||"SKIPPED".equals(row.status))item.setAlpha(0.82f);LinearLayout top=new LinearLayout(this);top.setGravity(Gravity.CENTER_VERTICAL);top.addView(text(formatTime(row.scheduledAtMs),22,palette.primary,true),new LinearLayout.LayoutParams(dp(76),dp(52)));LinearLayout name=new LinearLayout(this);name.setOrientation(LinearLayout.VERTICAL);name.addView(text(row.medicationName,16,palette.text,true));String detail=joinNonEmpty(row.dose,row.meal);if(!detail.isEmpty())name.addView(text(detail,13,palette.secondary,false));top.addView(name,new LinearLayout.LayoutParams(0,dp(52),1));TextView state=text(statusLabel(row.status),12,statusColor(row.status),true);state.setGravity(Gravity.CENTER);state.setBackground(round(statusBackground(row.status),999));state.setPadding(dp(7),0,dp(7),0);top.addView(state,new LinearLayout.LayoutParams(dp(76),dp(30)));item.addView(top);
-            LinearLayout actions=new LinearLayout(this);actions.setGravity(Gravity.END);if("TAKEN".equals(row.status)){Button undo=outlineButton("撤销",palette.secondary);undo.setOnClickListener(v->{database.applyOccurrenceAction(row.id,ReminderScheduler.OP_UNDO,System.currentTimeMillis(),0,"用户撤销");scheduler.rebuild();suppressPageAnimation=true;showToday();showFeedback("已撤销这次服用记录");});actions.addView(undo,new LinearLayout.LayoutParams(dp(84),dp(44)));}else{Button take=actionButton("已服用",palette.primary,palette.white);take.setOnClickListener(v->recordOccurrence(row,ReminderScheduler.OP_TAKEN,"今日操作","已记录服用，可在下方撤销"));Button skip=outlineButton("跳过",palette.secondary);skip.setOnClickListener(v->recordOccurrence(row,ReminderScheduler.OP_SKIP,"今日操作","已标记为跳过"));Button snooze=outlineButton("稍后",palette.secondary);snooze.setOnClickListener(v->recordOccurrence(row,ReminderScheduler.OP_SNOOZE,"用户稍后提醒","已延后 15 分钟"));actions.addView(take,new LinearLayout.LayoutParams(dp(90),dp(44)));actions.addView(skip,new LinearLayout.LayoutParams(dp(76),dp(44)));actions.addView(snooze,new LinearLayout.LayoutParams(dp(76),dp(44)));}item.addView(actions);content.addView(item,mb(10));UiKit.enter(this,item,index++);}
-        LinearLayout safety=card();safety.addView(sectionLabel("确定性安全检查"));List<SafetyEngine.Finding> findings=safetyFindings();safety.addView(text(findings.isEmpty()?"当前没有命中本机规则；这不等于临床上没有风险。":"命中 "+findings.size()+" 条需要核对的本机规则。",14,findings.isEmpty()?palette.secondary:palette.warning,false),mt(8));Button inspect=outlineButton("查看规则结果",palette.primary);inspect.setOnClickListener(v->showFindings(findings));safety.addView(inspect,mt(8));content.addView(safety,mb(12));animateContent();
-    }
-
-    private void showMedicationsLegacy() {
-        currentPage=1;setPageTitle("药物  ·  药品与实际批次");selectNav(1);content.removeAllViews();LinearLayout intro=card();intro.addView(text("每种实际药盒都单独记录批次，避免不同有效期混在一起。",14,palette.secondary,false));LinearLayout introActions=new LinearLayout(this);Button add=actionButton("新增药物",palette.primary,palette.white);add.setOnClickListener(v->medicationEditor(null));Button scan=outlineButton("拍照识别",palette.primary);scan.setOnClickListener(v->startCamera());Button file=outlineButton("导入资料",palette.primary);file.setOnClickListener(v->startFilePicker());introActions.addView(add,new LinearLayout.LayoutParams(0,dp(46),1));introActions.addView(scan,new LinearLayout.LayoutParams(0,dp(46),1));introActions.addView(file,new LinearLayout.LayoutParams(0,dp(46),1));intro.addView(introActions,mt(10));content.addView(intro,mb(12));
-        List<LunaDatabase.MedicationRow> meds=database.medications(true);if(meds.isEmpty()){content.addView(emptyCard("还没有药品记录\n可以手工录入，或从药盒/说明书导入 AI 识别草稿。"));return;}for(LunaDatabase.MedicationRow med:meds){LinearLayout item=card();LinearLayout line=new LinearLayout(this);line.addView(text(med.displayName(),18,palette.text,true),new LinearLayout.LayoutParams(0,dp(34),1));TextView state=text(med.status,12,"ACTIVE".equals(med.status)?palette.primary:palette.secondary,true);state.setGravity(Gravity.CENTER);state.setBackground(round("ACTIVE".equals(med.status)?palette.primarySoft:palette.soft,999));state.setPadding(dp(8),0,dp(8),0);line.addView(state,new LinearLayout.LayoutParams(dp(86),dp(30)));item.addView(line);item.addView(text(joinNonEmpty(med.genericName,med.strength,med.dosageForm),14,palette.secondary,false));item.addView(text(joinNonEmpty(med.ingredients,med.manufacturer,med.approvalNo),13,palette.secondary,false));if(!med.indication.isEmpty())item.addView(text("用途："+med.indication,13,palette.secondary,false));
-            LinearLayout actions=new LinearLayout(this);Button edit=outlineButton("编辑",palette.primary);edit.setOnClickListener(v->medicationEditor(med));Button batch=outlineButton("批次",palette.primary);batch.setOnClickListener(v->batchManager(med));Button plan=outlineButton("计划",palette.primary);plan.setOnClickListener(v->planManager(med));actions.addView(edit,new LinearLayout.LayoutParams(0,dp(44),1));actions.addView(batch,new LinearLayout.LayoutParams(0,dp(44),1));actions.addView(plan,new LinearLayout.LayoutParams(0,dp(44),1));item.addView(actions);
-            LinearLayout more=new LinearLayout(this);Button archive=outlineButton("ACTIVE".equals(med.status)?"停用":"恢复",palette.secondary);archive.setOnClickListener(v->{database.setMedicationStatus(med.id,"ACTIVE".equals(med.status)?"ARCHIVED":"ACTIVE");showMedications();});Button delete=outlineButton("删除",palette.danger);delete.setOnClickListener(v->confirmDeleteMedication(med));more.addView(archive,new LinearLayout.LayoutParams(0,dp(42),1));more.addView(delete,new LinearLayout.LayoutParams(0,dp(42),1));item.addView(more,mt(6));content.addView(item,mb(10));}
-    }
-
-    private void showMedications() {
-        currentPage=1;setPageTitle("药物  ·  药品与实际批次");selectNav(1);content.removeAllViews();
-        LinearLayout intro=card();intro.addView(text("把药品、实际药盒批次和提醒计划分开记录，查找和修改会更清楚。",14,palette.secondary,false));
-        LinearLayout actions=new LinearLayout(this);Button add=actionButton("新增药物",palette.primary,palette.white);add.setOnClickListener(v->medicationEditor(null));Button scan=outlineButton("拍照识别",palette.primary);scan.setOnClickListener(v->startCamera());Button file=outlineButton("导入资料",palette.primary);file.setOnClickListener(v->startFilePicker());actions.addView(add,new LinearLayout.LayoutParams(0,dp(46),1));actions.addView(scan,new LinearLayout.LayoutParams(0,dp(46),1));actions.addView(file,new LinearLayout.LayoutParams(0,dp(46),1));intro.addView(actions,mt(10));
-        EditText query=input("搜索药名、通用名或规格",false);Spinner filter=new Spinner(this);filter.setAdapter(new ArrayAdapter<>(this,android.R.layout.simple_spinner_dropdown_item,new String[]{"全部药物","正在服用","已停用","有库存","近期到期"}));Button search=outlineButton("筛选",palette.primary);LinearLayout searchRow=new LinearLayout(this);searchRow.addView(query,new LinearLayout.LayoutParams(0,dp(48),1));searchRow.addView(filter,new LinearLayout.LayoutParams(dp(112),dp(48)));searchRow.addView(search,new LinearLayout.LayoutParams(dp(70),dp(48)));intro.addView(searchRow,mt(8));content.addView(intro,mb(12));search.setOnClickListener(v->renderMedications(query.getText().toString(),filter.getSelectedItemPosition()));renderMedications("",0);
-    }
-
-    private void renderMedications(String query,int filterIndex){
-        for(int i=content.getChildCount()-1;i>=1;i--)content.removeViewAt(i);String q=query==null?"":query.trim().toLowerCase(Locale.ROOT);List<LunaDatabase.MedicationRow> meds=database.medications(true);int itemIndex=0;
-        for(LunaDatabase.MedicationRow med:meds){if(!q.isEmpty()&&!joinNonEmpty(med.displayName(),med.genericName,med.strength).toLowerCase(Locale.ROOT).contains(q))continue;List<LunaDatabase.BatchRow> batches=database.batches(med.id);if(filterIndex==1&&!"ACTIVE".equals(med.status))continue;if(filterIndex==2&&!"ARCHIVED".equals(med.status))continue;if(filterIndex==3&&!hasStock(batches))continue;if(filterIndex==4&&!hasExpiringBatch(batches))continue;
-            LinearLayout item=card();LinearLayout line=new LinearLayout(this);line.setGravity(Gravity.CENTER_VERTICAL);line.addView(text(med.displayName(),18,palette.text,true),new LinearLayout.LayoutParams(0,dp(34),1));String medLabel=medicationStatusLabel(med.status);TextView state=text(medLabel,12,"ACTIVE".equals(med.status)?palette.primary:palette.secondary,true);state.setGravity(Gravity.CENTER);state.setBackground(round("ACTIVE".equals(med.status)?palette.primarySoft:palette.soft,999));state.setPadding(dp(8),0,dp(8),0);line.addView(state,new LinearLayout.LayoutParams(dp(82),dp(30)));item.addView(line);String details=joinNonEmpty(med.genericName,med.strength,med.dosageForm);if(!details.isEmpty())item.addView(text(details,14,palette.secondary,false),mt(3));String stock=stockSummary(batches);String expiry=expirySummary(batches);item.addView(text(joinNonEmpty(stock,expiry),13,expiry.contains("到期")&&hasExpiringBatch(batches)?palette.warning:palette.secondary,false),mt(4));if(!med.indication.isEmpty())item.addView(text("用途："+med.indication,13,palette.secondary,false),mt(2));
-            LinearLayout primaryActions=new LinearLayout(this);Button edit=outlineButton("编辑",palette.primary);edit.setOnClickListener(v->medicationEditor(med));Button batch=outlineButton("批次",palette.primary);batch.setOnClickListener(v->batchManager(med));Button plan=outlineButton("计划",palette.primary);plan.setOnClickListener(v->planManager(med));Button more=outlineButton("更多",palette.secondary);more.setOnClickListener(v->showMedicationMenu(med));primaryActions.addView(edit,new LinearLayout.LayoutParams(0,dp(44),1));primaryActions.addView(batch,new LinearLayout.LayoutParams(0,dp(44),1));primaryActions.addView(plan,new LinearLayout.LayoutParams(0,dp(44),1));primaryActions.addView(more,new LinearLayout.LayoutParams(0,dp(44),1));item.addView(primaryActions,mt(8));content.addView(item,mb(10));UiKit.enter(this,item,itemIndex++);
+    void showTab(int tab) {
+        currentTab = Math.max(TAB_TODAY, Math.min(TAB_ASSISTANT, tab));
+        Fragment fragment;
+        String title;
+        switch (currentTab) {
+            case TAB_MEDICATIONS: fragment = new MedicationsFragment(); title = "药物"; break;
+            case TAB_DOCUMENTS: fragment = new DocumentsFragment(); title = "资料"; break;
+            case TAB_HEALTH: fragment = new HealthFragment(); title = "健康"; break;
+            case TAB_ASSISTANT: fragment = new AssistantFragment(); title = "助手"; break;
+            default: fragment = new TodayFragment(); title = "今日"; break;
         }
-        if(itemIndex==0){LinearLayout empty=emptyCard(q.isEmpty()?"还没有匹配的药物记录。":"没有符合当前搜索或筛选条件的药物。",q.isEmpty()?"新增药物":"清除筛选",v->{if(q.isEmpty()){medicationEditor(null);}else showMedications();});content.addView(empty,mb(12));UiKit.enter(this,empty,0);}
+        binding.topAppBar.setTitle(title);
+        binding.topAppBar.setSubtitle("本地优先 · 轻量记录");
+        int menuId = currentTab == TAB_TODAY ? R.id.nav_today : currentTab == TAB_MEDICATIONS ? R.id.nav_medications : currentTab == TAB_DOCUMENTS ? R.id.nav_documents : currentTab == TAB_HEALTH ? R.id.nav_health : R.id.nav_assistant;
+        if (binding.bottomNavigation.getSelectedItemId() != menuId) {
+            changingTab = true;
+            try { binding.bottomNavigation.setSelectedItemId(menuId); }
+            finally { changingTab = false; }
+        }
+        getSupportFragmentManager().beginTransaction().setReorderingAllowed(true).replace(R.id.page_container, fragment).commit();
     }
 
-    private void showMedicationMenu(LunaDatabase.MedicationRow med){String action="ACTIVE".equals(med.status)?"停用药物":"恢复药物";new AlertDialog.Builder(this).setTitle(med.displayName()).setItems(new String[]{action,"删除药物"},(d,which)->{if(which==0){database.setMedicationStatus(med.id,"ACTIVE".equals(med.status)?"ARCHIVED":"ACTIVE");scheduler.rebuild();showMedications();}else confirmDeleteMedication(med);}).show();}
+    Palette palette() { return palette; }
+    LunaDatabase database() { return database; }
+    ReminderScheduler scheduler() { return scheduler; }
+    AssistantRepository assistant() { return assistant; }
+    VisionRepository vision() { return vision; }
 
-    private boolean hasStock(List<LunaDatabase.BatchRow> rows){for(LunaDatabase.BatchRow row:rows)if(row.quantity>0&&!"DISCARDED".equals(row.state)&&!"EXPIRED".equals(row.state))return true;return false;}
-    private boolean hasExpiringBatch(List<LunaDatabase.BatchRow> rows){LocalDate limit=LocalDate.now().plusDays(30);for(LunaDatabase.BatchRow row:rows)try{if(!row.expiryDate.isEmpty()){LocalDate date=LocalDate.parse(row.expiryDate);if(!date.isBefore(LocalDate.now())&&!date.isAfter(limit))return true;}}catch(Exception ignored){}return false;}
-    private String stockSummary(List<LunaDatabase.BatchRow> rows){double total=0;String unit="";for(LunaDatabase.BatchRow row:rows){if(!"DISCARDED".equals(row.state)&&!"EXPIRED".equals(row.state)){total+=row.quantity;if(unit.isEmpty())unit=row.quantityUnit;}}return rows.isEmpty()?"暂无批次":("库存 "+trimNumber(total)+unit+" · "+rows.size()+" 个批次");}
-    private String expirySummary(List<LunaDatabase.BatchRow> rows){String nearest="";for(LunaDatabase.BatchRow row:rows)if(!row.expiryDate.isEmpty()&&(nearest.isEmpty()||row.expiryDate.compareTo(nearest)<0))nearest=row.expiryDate;return nearest.isEmpty()?"":"到期 "+nearest;}
-    private String trimNumber(double value){return value==Math.rint(value)?Integer.toString((int)value):String.format(Locale.US,"%.1f",value);}
-
-    private void medicationEditorLegacy(LunaDatabase.MedicationRow existing) {
-        LinearLayout form=form();EditText generic=input("通用名",false),brand=input("商品名",false),ingredients=input("有效成分（用逗号分隔）",false),strength=input("规格",false),dosage=input("剂型",false),maker=input("厂家",false),approval=input("批准文号",false),indication=input("用途",false),contra=input("说明书禁忌（确认后才用于规则）",true),notes=input("备注",true);for(EditText e:new EditText[]{generic,brand,ingredients,strength,dosage,maker,approval,indication,contra,notes})form.addView(e);if(existing!=null){generic.setText(existing.genericName);brand.setText(existing.brandName);ingredients.setText(existing.ingredients);strength.setText(existing.strength);dosage.setText(existing.dosageForm);maker.setText(existing.manufacturer);approval.setText(existing.approvalNo);indication.setText(existing.indication);contra.setText(existing.contraindications);notes.setText(existing.notes);}AlertDialog dialog=new AlertDialog.Builder(this).setTitle(existing==null?"新增药物":"编辑药物").setMessage("带星号之外的字段可稍后补齐；AI 识别结果必须在这里确认后才成为正式药物记录。").setView(form).setNegativeButton("取消",null).setPositiveButton("保存",null).create();dialog.setOnShowListener(v->dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(x->{if(generic.getText().toString().trim().isEmpty()&&brand.getText().toString().trim().isEmpty()){toast("通用名或商品名至少填写一个");return;}LunaDatabase.MedicationDraft d=new LunaDatabase.MedicationDraft();d.genericName=generic.getText().toString().trim();d.brandName=brand.getText().toString().trim();d.ingredients=ingredients.getText().toString().trim();d.strength=strength.getText().toString().trim();d.dosageForm=dosage.getText().toString().trim();d.manufacturer=maker.getText().toString().trim();d.approvalNo=approval.getText().toString().trim();d.indication=indication.getText().toString().trim();d.contraindications=contra.getText().toString().trim();d.notes=notes.getText().toString().trim();d.status=existing==null?"ACTIVE":existing.status;if(existing==null)database.addMedication(d);else database.updateMedication(existing.id,d);dialog.dismiss();scheduler.rebuild();showMedications();}));dialog.show();}
-
-    private void medicationEditor(LunaDatabase.MedicationRow existing) {
-        LinearLayout form=form();EditText generic=input("通用名",false),brand=input("商品名",false),ingredients=input("有效成分（可选）",false),strength=input("规格（可选）",false),dosage=input("剂型（可选）",false),maker=input("厂家（可选）",false),approval=input("批准文号（可选）",false),indication=input("用途（可选）",false),contra=input("说明书禁忌（确认后才用于规则）",true),notes=input("备注（可选）",true);for(EditText e:new EditText[]{generic,brand,ingredients,strength,dosage,maker,approval,indication,contra,notes})form.addView(e);if(existing!=null){generic.setText(existing.genericName);brand.setText(existing.brandName);ingredients.setText(existing.ingredients);strength.setText(existing.strength);dosage.setText(existing.dosageForm);maker.setText(existing.manufacturer);approval.setText(existing.approvalNo);indication.setText(existing.indication);contra.setText(existing.contraindications);notes.setText(existing.notes);}AlertDialog dialog=new AlertDialog.Builder(this).setTitle(existing==null?"新增药物":"编辑药物").setMessage("商品名或通用名至少填写一个；其余字段可以之后补齐。AI 草稿只有在这里确认后才会成为正式药物记录。").setView(scrollForm(form)).setNegativeButton("取消",null).setPositiveButton("保存",null).create();dialog.setOnShowListener(v->dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(x->{String genericValue=generic.getText().toString().trim(),brandValue=brand.getText().toString().trim();if(genericValue.isEmpty()&&brandValue.isEmpty()){brand.setError("商品名或通用名至少填写一个");brand.requestFocus();return;}LunaDatabase.MedicationDraft d=new LunaDatabase.MedicationDraft();d.genericName=genericValue;d.brandName=brandValue;d.ingredients=ingredients.getText().toString().trim();d.strength=strength.getText().toString().trim();d.dosageForm=dosage.getText().toString().trim();d.manufacturer=maker.getText().toString().trim();d.approvalNo=approval.getText().toString().trim();d.indication=indication.getText().toString().trim();d.contraindications=contra.getText().toString().trim();d.notes=notes.getText().toString().trim();d.status=existing==null?"ACTIVE":existing.status;if(existing==null)database.addMedication(d);else database.updateMedication(existing.id,d);dialog.dismiss();scheduler.rebuild();showMedications();showFeedback(existing==null?"已添加药物":"已更新药物");}));dialog.show();}
-
-    private void batchManager(LunaDatabase.MedicationRow med){LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);List<LunaDatabase.BatchRow> rows=database.batches(med.id);if(rows.isEmpty())box.addView(text("暂无批次；服用后不会凭空扣库存。",14,palette.secondary,false));for(LunaDatabase.BatchRow b:rows){LinearLayout line=new LinearLayout(this);line.setGravity(Gravity.CENTER_VERTICAL);line.addView(text("批号 "+(b.lotNo.isEmpty()?"未填写":b.lotNo)+" · "+trimNumber(b.quantity)+b.quantityUnit+" · "+batchStateLabel(b.state)+" · 到期 "+(b.expiryDate.isEmpty()?"未填写":b.expiryDate),13,palette.text,false),new LinearLayout.LayoutParams(0,dp(52),1));Button e=outlineButton("编辑",palette.primary);e.setOnClickListener(v->batchEditor(med,b));Button d=outlineButton("删除",palette.danger);d.setOnClickListener(v->confirmDeleteBatch(med,b));line.addView(e,new LinearLayout.LayoutParams(dp(70),dp(44)));line.addView(d,new LinearLayout.LayoutParams(dp(70),dp(44)));box.addView(line);}Button add=actionButton("添加批次",palette.primary,palette.white);add.setOnClickListener(v->batchEditor(med,null));box.addView(add,mt(8));new AlertDialog.Builder(this).setTitle(med.displayName()+" · 实际药盒批次").setView(box).setPositiveButton("关闭",null).show();}
-
-    private void confirmDeleteBatch(LunaDatabase.MedicationRow med,LunaDatabase.BatchRow row){new AlertDialog.Builder(this).setTitle("删除这个批次？").setMessage("将删除批号“"+(row.lotNo.isEmpty()?"未填写":row.lotNo)+"”及库存记录，不能撤销。相关服用记录不会伪造补回库存。").setNegativeButton("取消",null).setPositiveButton("删除",(d,w)->{database.deleteBatch(row.id);batchManager(med);showFeedback("已删除批次");}).show();}
-    private void batchEditorLegacy(LunaDatabase.MedicationRow med,LunaDatabase.BatchRow existing){LinearLayout form=form();EditText lot=input("批号",false),qty=input("数量",true),unit=input("数量单位，例如片/瓶",false),prod=input("生产日期 YYYY-MM-DD",false),expiry=input("有效期 YYYY-MM-DD",false),opened=input("开封日期 YYYY-MM-DD",false),location=input("存放位置",false),conditions=input("储存条件",false),state=input("状态 IN_STOCK/OPENED/EXPIRED/DISCARDED",false),notes=input("批次备注",true);for(EditText e:new EditText[]{lot,qty,unit,prod,expiry,opened,location,conditions,state,notes})form.addView(e);qty.setInputType(InputType.TYPE_CLASS_NUMBER|InputType.TYPE_NUMBER_FLAG_DECIMAL);unit.setText("片");state.setText("IN_STOCK");if(existing!=null){lot.setText(existing.lotNo);qty.setText(Double.toString(existing.quantity));unit.setText(existing.quantityUnit);prod.setText(existing.productionDate);expiry.setText(existing.expiryDate);opened.setText(existing.openedDate);location.setText(existing.storageLocation);conditions.setText(existing.storageConditions);state.setText(existing.state);notes.setText(existing.notes);}AlertDialog dialog=new AlertDialog.Builder(this).setTitle(existing==null?"添加实际批次":"编辑实际批次").setView(form).setNegativeButton("取消",null).setPositiveButton("保存",null).create();dialog.setOnShowListener(v->dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(x->{double quantity;try{quantity=Double.parseDouble(qty.getText().toString().trim());}catch(Exception e){toast("数量必须是数字");return;}if(quantity<0||!validDate(prod.getText().toString())||!validDate(expiry.getText().toString())||!validDate(opened.getText().toString())){toast("日期必须为空或 YYYY-MM-DD，数量不能为负");return;}LunaDatabase.BatchDraft d=new LunaDatabase.BatchDraft();d.lotNo=lot.getText().toString().trim();d.quantity=quantity;d.quantityUnit=unit.getText().toString().trim();d.productionDate=prod.getText().toString().trim();d.expiryDate=expiry.getText().toString().trim();d.openedDate=opened.getText().toString().trim();d.storageLocation=location.getText().toString().trim();d.storageConditions=conditions.getText().toString().trim();d.state=state.getText().toString().trim();d.notes=notes.getText().toString().trim();if(existing==null)database.addBatch(med.id,d);else database.updateBatch(existing.id,d);dialog.dismiss();showMedications();}));dialog.show();}
-
-    private void batchEditor(LunaDatabase.MedicationRow med,LunaDatabase.BatchRow existing){
-        LinearLayout form=form();EditText lot=input("批号（可选）",false),qty=input("数量",false),unit=input("数量单位，例如片或瓶",false),prod=input("生产日期（可选，YYYY-MM-DD）",false),expiry=input("有效期（可选，YYYY-MM-DD）",false),opened=input("开封日期（可选，YYYY-MM-DD）",false),location=input("存放位置（可选）",false),conditions=input("储存条件（可选）",false),notes=input("批次备注（可选）",true);qty.setInputType(InputType.TYPE_CLASS_NUMBER|InputType.TYPE_NUMBER_FLAG_DECIMAL);unit.setText("片");
-        String[] stateLabels={"有库存","已开封","已过期","已丢弃"};String[] stateValues={"IN_STOCK","OPENED","EXPIRED","DISCARDED"};Spinner state=choiceSpinner(stateLabels);form.addView(text("批次状态",12,palette.secondary,true));form.addView(state,mt(3));for(EditText e:new EditText[]{lot,qty,unit,prod,expiry,opened,location,conditions,notes})form.addView(e);if(existing!=null){lot.setText(existing.lotNo);qty.setText(Double.toString(existing.quantity));unit.setText(existing.quantityUnit);prod.setText(existing.productionDate);expiry.setText(existing.expiryDate);opened.setText(existing.openedDate);location.setText(existing.storageLocation);conditions.setText(existing.storageConditions);notes.setText(existing.notes);state.setSelection(indexOf(stateValues,existing.state));}else qty.setText("0");
-        AlertDialog dialog=new AlertDialog.Builder(this).setTitle(existing==null?"添加实际批次":"编辑实际批次").setView(scrollForm(form)).setNegativeButton("取消",null).setPositiveButton("保存",null).create();dialog.setOnShowListener(v->dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(x->{String quantityText=qty.getText().toString().trim();double quantity;try{quantity=Double.parseDouble(quantityText);}catch(Exception e){qty.setError("请输入数量");qty.requestFocus();return;}if(quantity<0){qty.setError("数量不能为负");qty.requestFocus();return;}if(unit.getText().toString().trim().isEmpty()){unit.setError("请填写单位");unit.requestFocus();return;}if(!validDate(prod.getText().toString())){prod.setError("日期格式或日期值无效");prod.requestFocus();return;}if(!validDate(expiry.getText().toString())){expiry.setError("日期格式或日期值无效");expiry.requestFocus();return;}if(!validDate(opened.getText().toString())){opened.setError("日期格式或日期值无效");opened.requestFocus();return;}LunaDatabase.BatchDraft d=new LunaDatabase.BatchDraft();d.lotNo=lot.getText().toString().trim();d.quantity=quantity;d.quantityUnit=unit.getText().toString().trim();d.productionDate=prod.getText().toString().trim();d.expiryDate=expiry.getText().toString().trim();d.openedDate=opened.getText().toString().trim();d.storageLocation=location.getText().toString().trim();d.storageConditions=conditions.getText().toString().trim();d.state=stateValues[state.getSelectedItemPosition()];d.notes=notes.getText().toString().trim();if(existing==null)database.addBatch(med.id,d);else database.updateBatch(existing.id,d);dialog.dismiss();showMedications();showFeedback(existing==null?"已添加批次":"已更新批次");}));dialog.show();}
-
-    private void planManager(LunaDatabase.MedicationRow med){LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);List<LunaDatabase.PlanRow> rows=database.plans(med.id);if(rows.isEmpty())box.addView(text("暂无计划；按需用药可保留空计划并手工记录。",14,palette.secondary,false));for(LunaDatabase.PlanRow p:rows){LinearLayout line=new LinearLayout(this);line.setGravity(Gravity.CENTER_VERTICAL);line.addView(text(planLabel(p),13,palette.text,false),new LinearLayout.LayoutParams(0,dp(58),1));Button e=outlineButton("编辑",palette.primary);e.setOnClickListener(v->planEditor(med,p));Button pause=outlineButton(p.paused?"恢复":"暂停",palette.secondary);pause.setOnClickListener(v->{database.setPlanPaused(p.id,!p.paused);scheduler.rebuild();planManager(med);showFeedback(p.paused?"已恢复提醒计划":"已暂停提醒计划");});Button d=outlineButton("删除",palette.danger);d.setOnClickListener(v->confirmDeletePlan(med,p));line.addView(e,new LinearLayout.LayoutParams(dp(66),dp(44)));line.addView(pause,new LinearLayout.LayoutParams(dp(70),dp(44)));line.addView(d,new LinearLayout.LayoutParams(dp(70),dp(44)));box.addView(line);}Button add=actionButton("添加计划",palette.primary,palette.white);add.setOnClickListener(v->planEditor(med,null));box.addView(add,mt(8));new AlertDialog.Builder(this).setTitle(med.displayName()+" · 用药计划").setView(box).setPositiveButton("关闭",null).show();}
-
-    private void confirmDeletePlan(LunaDatabase.MedicationRow med,LunaDatabase.PlanRow row){new AlertDialog.Builder(this).setTitle("删除这个提醒计划？").setMessage("将删除“"+planLabel(row)+"”以及尚未发生的提醒记录，不能撤销。").setNegativeButton("取消",null).setPositiveButton("删除",(d,w)->{database.deletePlan(row.id);scheduler.rebuild();planManager(med);showFeedback("已删除提醒计划");}).show();}
-    private void planEditorLegacy(LunaDatabase.MedicationRow med,LunaDatabase.PlanRow existing){LinearLayout form=form();EditText type=input("类型 DAILY/WEEKLY/INTERVAL/PRN/TEMP",false),times=input("时间 HH:mm，多个用逗号，例如 08:00,20:00",false),weekdays=input("星期掩码：1=周一...7=周日，例如 12345",false),interval=input("间隔小时（INTERVAL）",true),start=input("开始日期 YYYY-MM-DD",false),end=input("结束日期 YYYY-MM-DD（可空）",false),startAt=input("间隔起点时间 YYYY-MM-DD HH:mm（可空）",false),dose=input("单次剂量",false),meal=input("饭前/饭后/随餐",false),notes=input("计划备注",true);for(EditText e:new EditText[]{type,times,weekdays,interval,start,end,startAt,dose,meal,notes})form.addView(e);type.setText("DAILY");times.setText("08:00");weekdays.setText("1234567");interval.setText("8");start.setText(LocalDate.now().toString());dose.setText("1 次");if(existing!=null){type.setText(existing.type);times.setText(existing.timesCsv);weekdays.setText(maskToDays(existing.weekdaysMask));interval.setText(Integer.toString(existing.intervalHours));start.setText(existing.startDate);end.setText(existing.endDate);dose.setText(existing.dose);meal.setText(existing.meal);notes.setText(existing.notes);}AlertDialog dialog=new AlertDialog.Builder(this).setTitle(existing==null?"新增用药计划":"编辑用药计划").setMessage("计划会生成未来 30 天 occurrence，并在开机/时间区/时区变化后重建。PRN 不自动生成闹钟。 ").setView(form).setNegativeButton("取消",null).setPositiveButton("保存",null).create();dialog.setOnShowListener(v->dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(x->{String planType=type.getText().toString().trim().toUpperCase(Locale.ROOT),timeCsv=times.getText().toString().trim(),startDate=start.getText().toString().trim(),endDate=end.getText().toString().trim();if(!planType.matches("DAILY|WEEKLY|INTERVAL|PRN|TEMP")||(!"PRN".equals(planType)&&!OccurrenceEngine.validTimeList(timeCsv))||!validDate(startDate)||!validDate(endDate)||(!endDate.isEmpty()&&endDate.compareTo(startDate)<0)){toast("类型、时间或日期无效；时间必须 HH:mm");return;}LunaDatabase.PlanDraft d=new LunaDatabase.PlanDraft();d.type=planType;d.timesCsv="PRN".equals(planType)?"08:00":timeCsv;d.weekdaysMask=parseDays(weekdays.getText().toString());d.intervalHours=Math.max(1,parseInt(interval.getText().toString(),8));d.startDate=startDate;d.endDate=endDate;d.startAtMs=parseDateTime(startAt.getText().toString());d.dose=dose.getText().toString().trim();d.meal=meal.getText().toString().trim();d.notes=notes.getText().toString().trim();if(existing==null)database.addPlan(med.id,d);else database.updatePlan(existing.id,d);dialog.dismiss();scheduler.rebuild();showMedications();}));dialog.show();}
-
-    private void planEditor(LunaDatabase.MedicationRow med,LunaDatabase.PlanRow existing){
-        LinearLayout form=form();String[] typeLabels={"每天","每周","按间隔","按需","临时疗程"};String[] typeValues={"DAILY","WEEKLY","INTERVAL","PRN","TEMP"};Spinner type=choiceSpinner(typeLabels);EditText times=input("提醒时间，例如 08:00 或 08:00,20:00",false),interval=input("间隔小时（仅按间隔计划）",false),start=input("开始日期（YYYY-MM-DD）",false),end=input("结束日期（可选，YYYY-MM-DD）",false),startAt=input("间隔起点（可选，YYYY-MM-DD HH:mm）",false),dose=input("单次剂量，例如 1 片",false),meal=input("饭前、饭后或随餐（可选）",false),notes=input("计划备注（可选）",true);times.setText("08:00");interval.setText("8");start.setText(LocalDate.now().toString());dose.setText("1 次");
-        LinearLayout weekdayRow=new LinearLayout(this);weekdayRow.setGravity(Gravity.CENTER);CheckBox[] weekdays=new CheckBox[7];String[] weekdayLabels={"一","二","三","四","五","六","日"};for(int i=0;i<7;i++){weekdays[i]=new CheckBox(this);weekdays[i].setText(weekdayLabels[i]);weekdays[i].setGravity(Gravity.CENTER);weekdays[i].setMinHeight(dp(48));weekdays[i].setChecked(true);weekdayRow.addView(weekdays[i],new LinearLayout.LayoutParams(0,dp(48),1));}
-        form.addView(text("计划频率",12,palette.secondary,true));form.addView(type,mt(3));form.addView(text("每周选择日期",12,palette.secondary,true),mt(8));form.addView(weekdayRow);form.addView(times);form.addView(interval);form.addView(start);form.addView(end);form.addView(startAt);form.addView(dose);form.addView(meal);form.addView(notes);
-        if(existing!=null){type.setSelection(indexOf(typeValues,existing.type));times.setText(existing.timesCsv);interval.setText(Integer.toString(existing.intervalHours));start.setText(existing.startDate);end.setText(existing.endDate);startAt.setText(existing.startAtMs==0?"":new SimpleDateFormat("yyyy-MM-dd HH:mm",Locale.US).format(new Date(existing.startAtMs)));dose.setText(existing.dose);meal.setText(existing.meal);notes.setText(existing.notes);for(int i=0;i<7;i++)weekdays[i].setChecked((existing.weekdaysMask&(1<<i))!=0);}
-        AlertDialog dialog=new AlertDialog.Builder(this).setTitle(existing==null?"新增用药计划":"编辑用药计划").setMessage("提醒计划会生成未来 30 天记录，并在开机、时区或时间变化后重建；按需用药不会自动生成闹钟。 ").setView(scrollForm(form)).setNegativeButton("取消",null).setPositiveButton("保存",null).create();dialog.setOnShowListener(v->dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(x->{String planType=typeValues[type.getSelectedItemPosition()],timeCsv=times.getText().toString().trim(),startDate=start.getText().toString().trim(),endDate=end.getText().toString().trim();if(!"PRN".equals(planType)&&!OccurrenceEngine.validTimeList(timeCsv)){times.setError("请输入 HH:mm，可用逗号分隔多个时间");times.requestFocus();return;}if(!validDate(startDate)){start.setError("请输入有效日期");start.requestFocus();return;}if(!validDate(endDate)||(!endDate.isEmpty()&&endDate.compareTo(startDate)<0)){end.setError("结束日期不能早于开始日期");end.requestFocus();return;}int mask=0;for(int i=0;i<7;i++)if(weekdays[i].isChecked())mask|=1<<i;if(mask==0){weekdayRow.setBackground(round(palette.dangerSoft,12));showFeedback("至少选择一个星期日期");return;}if(dose.getText().toString().trim().isEmpty()){dose.setError("请填写单次剂量");dose.requestFocus();return;}LunaDatabase.PlanDraft d=new LunaDatabase.PlanDraft();d.type=planType;d.timesCsv="PRN".equals(planType)?"08:00":timeCsv;d.weekdaysMask=mask;d.intervalHours=Math.max(1,parseInt(interval.getText().toString(),8));d.startDate=startDate;d.endDate=endDate;d.startAtMs=parseDateTime(startAt.getText().toString().trim());d.dose=dose.getText().toString().trim();d.meal=meal.getText().toString().trim();d.notes=notes.getText().toString().trim();if(existing==null)database.addPlan(med.id,d);else database.updatePlan(existing.id,d);dialog.dismiss();scheduler.rebuild();showMedications();showFeedback(existing==null?"已添加提醒计划":"已更新提醒计划");}));dialog.show();}
-
-    private void showDocuments(){currentPage=2;setPageTitle("资料  ·  说明书与 AI 识别草稿");selectNav(2);content.removeAllViews();LinearLayout top=card();top.addView(text("原图/PDF 始终保存在应用私有目录；发送给 deepseek-flash 前会显示页数、大小和明确确认。识别结果必须逐字段核对。",14,palette.secondary,false));LinearLayout actions=new LinearLayout(this);Button camera=actionButton("拍照",palette.primary,palette.white);camera.setOnClickListener(v->startCamera());Button file=outlineButton("导入图片/PDF",palette.primary);file.setOnClickListener(v->startFilePicker());actions.addView(camera,new LinearLayout.LayoutParams(0,dp(46),1));actions.addView(file,new LinearLayout.LayoutParams(0,dp(46),1));top.addView(actions,mt(10));EditText query=input("搜索识别文本、修订内容、章节、版本或链接",false);Button search=outlineButton("搜索",palette.primary);LinearLayout searchRow=new LinearLayout(this);searchRow.addView(query,new LinearLayout.LayoutParams(0,dp(48),1));searchRow.addView(search,new LinearLayout.LayoutParams(dp(78),dp(48)));top.addView(searchRow,mt(8));search.setOnClickListener(v->renderDocuments(query.getText().toString()));content.addView(top,mb(12));renderDocuments("");}
-    private void renderDocumentsLegacy(String query){for(int i=content.getChildCount()-1;i>=1;i--)content.removeViewAt(i);List<LunaDatabase.DocumentRow> docs=database.documents(query);if(docs.isEmpty()){content.addView(emptyCard("还没有匹配资料。导入图片/PDF 后，AI 识别结果会进入待确认资料库。"));return;}for(LunaDatabase.DocumentRow d:docs){String status="CONFIRMED".equals(d.recognitionStatus)?"已确认":"FAILED".equals(d.recognitionStatus)?"识别失败":"WAITING_KEY".equals(d.recognitionStatus)?"等待识别":"PROCESSING".equals(d.recognitionStatus)?"识别中":"LEGACY".equals(d.recognitionStatus)?"旧版识别结果":"待确认";LinearLayout item=card();item.addView(text(status+" · 第 "+d.pageNo+" 页 · "+(d.model==null||d.model.isEmpty()?"本地历史":d.model),13,"CONFIRMED".equals(d.recognitionStatus)?palette.primary:palette.warning,true));item.addView(text(joinNonEmpty(d.chapter,d.version,d.manufacturer,d.links),14,palette.text,false));String excerpt=d.correctedText.isEmpty()?d.ocrText:d.correctedText;item.addView(text(excerpt.length()>180?excerpt.substring(0,180)+"…":excerpt,13,palette.secondary,false));if(!d.failureReason.isEmpty())item.addView(text("原因："+d.failureReason,12,palette.danger,false));LinearLayout actions=new LinearLayout(this);if("WAITING_KEY".equals(d.recognitionStatus)||"FAILED".equals(d.recognitionStatus)||"LEGACY".equals(d.recognitionStatus)||"DRAFT".equals(d.recognitionStatus)||"PROCESSING".equals(d.recognitionStatus)){Button retry=outlineButton("重新识别",palette.primary);retry.setOnClickListener(v->retryVision(d));actions.addView(retry,new LinearLayout.LayoutParams(0,dp(44),1));}if(!d.structuredJson.isEmpty()){Button view=outlineButton("查看结构化结果",palette.primary);view.setOnClickListener(v->showDocumentDetails(d));actions.addView(view,new LinearLayout.LayoutParams(0,dp(44),1));}Button del=outlineButton("删除资料",palette.danger);del.setOnClickListener(v->{deleteDocumentAndFiles(d);showDocuments();});actions.addView(del,new LinearLayout.LayoutParams(0,dp(44),1));item.addView(actions,mt(8));content.addView(item,mb(10));}}
-
-    private void renderDocuments(String query){
-        for(int i=content.getChildCount()-1;i>=1;i--)content.removeViewAt(i);List<LunaDatabase.DocumentRow> docs=database.documents(query);if(docs.isEmpty()){LinearLayout empty=emptyCard("还没有匹配资料。\n导入图片或 PDF 后，识别草稿会在这里分阶段显示。","导入资料",v->startFilePicker());content.addView(empty,mb(12));UiKit.enter(this,empty,0);return;}
-        int index=0;for(LunaDatabase.DocumentRow d:docs){String status=documentStatusLabel(d.recognitionStatus);int color="已确认".equals(status)?palette.primary:"识别失败".equals(status)?palette.danger:"正在识别".equals(status)?palette.warning:palette.secondary;LinearLayout item=card();item.addView(text(status+" · 第 "+d.pageNo+" 页",13,color,true));String title=joinNonEmpty(d.chapter,d.version,d.manufacturer);item.addView(text(title.isEmpty()?"未填写标题":""+title,16,palette.text,true),mt(5));String excerpt=d.correctedText.isEmpty()?d.ocrText:d.correctedText;if(!excerpt.isEmpty())item.addView(text(excerpt.length()>180?excerpt.substring(0,180)+"…":excerpt,13,palette.secondary,false),mt(4));if(!d.failureReason.isEmpty())item.addView(text("需要处理："+d.failureReason,12,palette.danger,false),mt(4));if("PROCESSING".equals(d.recognitionStatus))item.addView(text("识别正在进行，完成后会在本页出现待确认草稿。",12,palette.secondary,false),mt(6));LinearLayout actions=new LinearLayout(this);if("WAITING_KEY".equals(d.recognitionStatus)||"FAILED".equals(d.recognitionStatus)||"LEGACY".equals(d.recognitionStatus)||"DRAFT".equals(d.recognitionStatus)){Button retry=outlineButton("重新识别",palette.primary);retry.setOnClickListener(v->retryVision(d));actions.addView(retry,new LinearLayout.LayoutParams(0,dp(44),1));}if(!d.structuredJson.isEmpty()){Button view=outlineButton("查看结构化结果",palette.primary);view.setOnClickListener(v->showDocumentDetails(d));actions.addView(view,new LinearLayout.LayoutParams(0,dp(44),1));}Button del=outlineButton("删除资料",palette.danger);del.setOnClickListener(v->confirmDeleteDocument(d));actions.addView(del,new LinearLayout.LayoutParams(0,dp(44),1));item.addView(actions,mt(8));content.addView(item,mb(10));UiKit.enter(this,item,index++);}
+    void feedback(String message) {
+        Toast.makeText(this, message == null ? "" : message, Toast.LENGTH_LONG).show();
     }
-    private void deleteDocumentAndFiles(LunaDatabase.DocumentRow row){List<LunaDatabase.DocumentRow> siblings=database.documents("");database.deleteDocument(row.id);if(row.compressedUri!=null&&!row.compressedUri.isEmpty())deletePrivateFile(row.compressedUri);boolean originalStillUsed=false;for(LunaDatabase.DocumentRow sibling:siblings)if(sibling.id!=row.id&&row.uri.equals(sibling.uri)){originalStillUsed=true;break;}if(!originalStillUsed)deletePrivateFile(row.uri);}
-    private void confirmDeleteDocument(LunaDatabase.DocumentRow row){new AlertDialog.Builder(this).setTitle("删除这份资料？").setMessage("将删除第 "+row.pageNo+" 页的本地索引、识别草稿和私有目录中的相关文件，不能撤销。").setNegativeButton("取消",null).setPositiveButton("删除",(d,w)->{deleteDocumentAndFiles(row);showDocuments();showFeedback("已删除资料");}).show();}
-    private void showDocumentDetails(LunaDatabase.DocumentRow row){String body=joinNonEmpty("页码："+row.pageNo,"模型："+row.model,"提示版本："+row.promptVersion,"原文件 SHA-256："+row.sha256,"压缩文件 SHA-256："+row.compressedSha256)+"\n\n"+row.structuredJson;new AlertDialog.Builder(this).setTitle("AI 结构化结果").setMessage(body).setPositiveButton("关闭",null).show();}
-    private void retryVision(LunaDatabase.DocumentRow row){File original=new File(row.uri);File compressed=row.compressedUri==null||row.compressedUri.isEmpty()?null:new File(row.compressedUri);try{if(compressed==null||!compressed.isFile())compressed=normalizeImage(original);List<VisionSource> sources=new ArrayList<>();sources.add(new VisionSource(original,compressed,row.mimeType,"application/pdf".equalsIgnoreCase(row.mimeType)?"image/jpeg":row.mimeType,row.pageNo));confirmVisionSources(sources);}catch(Exception error){toast("无法重新准备原文件："+friendlyUiError(error.getMessage()));}}
 
-    private void showHealth(){currentPage=3;setPageTitle("健康  ·  用户确认的资料");selectNav(3);content.removeAllViews();LinearLayout top=card();top.addView(text("AI 抽取的信息在确认前只作为草稿，不参与正式回答。敏感文本使用 Android Keystore 加密。",14,palette.secondary,false));LinearLayout actions=new LinearLayout(this);Button add=actionButton("新增记录",palette.primary,palette.white);add.setOnClickListener(v->healthEditor(null));Button export=outlineButton("导出",palette.primary);export.setOnClickListener(v->startActivityForResult(new Intent(Intent.ACTION_CREATE_DOCUMENT).setType("application/octet-stream").putExtra(Intent.EXTRA_TITLE,"personal-medication-backup.pmb"),REQ_EXPORT));Button imp=outlineButton("导入",palette.primary);imp.setOnClickListener(v->startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT).setType("application/octet-stream").addCategory(Intent.CATEGORY_OPENABLE),REQ_IMPORT));actions.addView(add,new LinearLayout.LayoutParams(0,dp(46),1));actions.addView(export,new LinearLayout.LayoutParams(0,dp(46),1));actions.addView(imp,new LinearLayout.LayoutParams(0,dp(46),1));top.addView(actions,mt(10));content.addView(top,mb(12));List<LunaDatabase.HealthRow> rows=database.healthItems();if(rows.isEmpty()){content.addView(emptyCard("还没有健康档案\n只添加回答当前问题确实需要的内容。"));}for(LunaDatabase.HealthRow row:rows){LinearLayout item=card();item.addView(text((row.confirmed?"已确认":"待确认")+" · "+healthKindLabel(row.kind),12,row.confirmed?palette.primary:palette.warning,true));item.addView(text(row.title,17,palette.text,true));if(!row.detail.trim().isEmpty())item.addView(text(row.detail,14,palette.secondary,false));if(!row.source.trim().isEmpty())item.addView(text("来源："+row.source,12,palette.secondary,false));LinearLayout buttons=new LinearLayout(this);Button edit=outlineButton("编辑",palette.primary);edit.setOnClickListener(v->healthEditor(row));Button del=outlineButton("删除",palette.danger);del.setOnClickListener(v->confirmDeleteHealth(row));buttons.addView(edit,new LinearLayout.LayoutParams(0,dp(44),1));buttons.addView(del,new LinearLayout.LayoutParams(0,dp(44),1));item.addView(buttons,mt(8));content.addView(item,mb(10));}Button wipe=outlineButton("彻底删除本机资料与密钥",palette.danger);wipe.setOnClickListener(v->confirmWipe());content.addView(wipe,mt(12));animateContent();}
-    private void healthEditorLegacy(LunaDatabase.HealthRow existing){LinearLayout form=form();EditText kind=input("类别 CONDITION/CHRONIC/ALLERGY/SURGERY/ADVERSE/ORGAN/PREGNANCY/MED_HISTORY/DOCUMENT",false),title=input("标题，例如 青霉素过敏",false),detail=input("详细内容",true),source=input("来源或文档页码",false);CheckBox confirmed=new CheckBox(this);confirmed.setText("我已核对并确认这条记录");form.addView(kind);form.addView(title);form.addView(detail);form.addView(source);form.addView(confirmed);if(existing!=null){kind.setText(existing.kind);title.setText(existing.title);detail.setText(existing.detail);source.setText(existing.source);confirmed.setChecked(existing.confirmed);}new AlertDialog.Builder(this).setTitle(existing==null?"新增健康记录":"编辑健康记录").setView(form).setNegativeButton("取消",null).setPositiveButton("保存",(d,w)->{LunaDatabase.HealthDraft h=new LunaDatabase.HealthDraft();h.kind=kind.getText().toString().trim().toUpperCase(Locale.ROOT);h.title=title.getText().toString().trim();h.detail=detail.getText().toString().trim();h.source=source.getText().toString().trim();h.confirmed=confirmed.isChecked();if(h.title.isEmpty()){toast("标题不能为空");return;}if(existing==null)database.saveHealth(h);else database.updateHealth(existing.id,h);showHealth();}).show();}
+    private void configureSystemBars() {
+        WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
+        getWindow().setStatusBarColor(palette.app);
+        getWindow().setNavigationBarColor(palette.app);
+        Window window = getWindow();
+        int flags = 0;
+        if (!isDarkMode()) flags |= View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
+        if (Build.VERSION.SDK_INT >= 26 && !isDarkMode()) flags |= View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;
+        window.getDecorView().setSystemUiVisibility(flags);
+    }
 
-    private void healthEditor(LunaDatabase.HealthRow existing){
-        LinearLayout form=form();String[] labels={"疾病或长期情况","过敏记录","手术史","不良反应","器官或生理情况","孕产信息","既往用药史","资料备注"};String[] values={"CONDITION","ALLERGY","SURGERY","ADVERSE","ORGAN","PREGNANCY","MED_HISTORY","DOCUMENT"};Spinner kind=choiceSpinner(labels);EditText title=input("标题，例如 青霉素过敏",false),detail=input("详细内容（可选）",true),source=input("来源或文档页码（可选）",false);CheckBox confirmed=new CheckBox(this);confirmed.setText("我已核对并确认这条记录");form.addView(text("记录类型",12,palette.secondary,true));form.addView(kind,mt(3));form.addView(title);form.addView(detail);form.addView(source);form.addView(confirmed,mt(4));int selected=existing==null?0:indexOf(values,existing.kind);kind.setSelection(Math.max(0,selected));if(existing!=null){title.setText(existing.title);detail.setText(existing.detail);source.setText(existing.source);confirmed.setChecked(existing.confirmed);}AlertDialog dialog=new AlertDialog.Builder(this).setTitle(existing==null?"新增健康记录":"编辑健康记录").setView(scrollForm(form)).setNegativeButton("取消",null).setPositiveButton("保存",null).create();dialog.setOnShowListener(v->dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(x->{String titleValue=title.getText().toString().trim();if(titleValue.isEmpty()){title.setError("标题不能为空");title.requestFocus();return;}LunaDatabase.HealthDraft h=new LunaDatabase.HealthDraft();h.kind=values[kind.getSelectedItemPosition()];h.title=titleValue;h.detail=detail.getText().toString().trim();h.source=source.getText().toString().trim();h.confirmed=confirmed.isChecked();if(existing==null)database.saveHealth(h);else database.updateHealth(existing.id,h);dialog.dismiss();showHealth();showFeedback(existing==null?"已保存健康记录":"已更新健康记录");}));dialog.show();}
-    private void confirmDeleteHealth(LunaDatabase.HealthRow row){new AlertDialog.Builder(this).setTitle("删除这条健康记录？").setMessage("将删除“"+row.title+"”及其确认状态，不能撤销。若仍需要，建议先导出加密备份。").setNegativeButton("取消",null).setPositiveButton("删除",(d,w)->{database.deleteHealth(row.id);showHealth();showFeedback("已删除健康记录");}).show();}
+    private boolean isDarkMode() {
+        return (getResources().getConfiguration().uiMode & android.content.res.Configuration.UI_MODE_NIGHT_MASK)
+                == android.content.res.Configuration.UI_MODE_NIGHT_YES;
+    }
 
-    private void showAssistant(){currentPage=PAGE_ASSISTANT;setPageTitle("助手  ·  先看本次资料");content.removeAllViews();configAssistant();animateContent();}
-    private void sendAi(String question,int position,boolean web){if(aiInFlight)return;aiInFlight=true;if(assistantAskButton!=null)assistantAskButton.setEnabled(false);if(assistantStatus!=null){assistantStatus.setText("正在请求模型；请保持页面打开，失败时可直接重试。 ");assistantStatus.setTextColor(palette.warning);}String[] efforts={"none","low","high","max"};String data=personalPreview();showFeedback("正在请求，请稍候");ai.answer(question,data,efforts[Math.max(0,Math.min(3,position))],web,new AiClient.Callback(){@Override public void success(AiClient.Response response){runOnUiThread(()->showAiResult(response));}@Override public void failure(String message){runOnUiThread(()->showAiFailure(message));}});}
-    private void showAiFailure(String message){aiInFlight=false;if(currentPage!=PAGE_ASSISTANT)return;if(assistantAskButton!=null)assistantAskButton.setEnabled(true);if(assistantStatus!=null){assistantStatus.setText("请求失败："+friendlyUiError(message)+"。检查 Key 或网络后可以重试。");assistantStatus.setTextColor(palette.danger);}showFeedback("请求失败，可修改问题后重试");}
-    private void showAiResult(AiClient.Response r){aiInFlight=false;if(currentPage!=PAGE_ASSISTANT)return;if(assistantAskButton!=null)assistantAskButton.setEnabled(true);if(assistantStatus!=null){assistantStatus.setText("请求完成。请结合来源和不确定性阅读，不要把回答当作诊断。");assistantStatus.setTextColor(palette.primary);}LinearLayout result=card();result.addView(text("回答 · "+effortLabel(r.effort),17,palette.text,true));result.addView(text(r.answer,15,palette.text,false),mt(6));result.addView(text("证据："+r.evidence,12,palette.secondary,false),mt(8));result.addView(text("不确定性："+r.uncertainty,12,palette.secondary,false),mt(4));result.addView(text("本次使用的本地资料："+r.personalDataUsed,12,palette.secondary,false),mt(4));if(r.sources.length()>0){result.addView(text("来源（官方 Web Search 结构化结果）",14,palette.text,true),mt(10));for(int i=0;i<r.sources.length();i++){JSONObject s=r.sources.optJSONObject(i);if(s!=null)result.addView(text(s.optString("title")+"\n"+s.optString("url"),12,palette.secondary,false),mt(4));}}for(int i=content.getChildCount()-1;i>=0;i--)if("assistant_result".equals(content.getChildAt(i).getTag())){content.removeViewAt(i);break;}result.setTag("assistant_result");content.addView(result);UiKit.enter(this,result,content.getChildCount()-1);showFeedback("回答已返回");}
+    void showSettings() {
+        LinearLayout form = new LinearLayout(this);
+        form.setOrientation(LinearLayout.VERTICAL);
+        form.setPadding(dp(8), dp(4), dp(8), dp(4));
+        TextView intro = label("设置只影响本机提醒、外观和数据控制。API Key 永不进入备份。");
+        form.addView(intro, margin(0, 0, 0, 8));
+        MaterialButton notifications = button("管理通知权限");
+        notifications.setOnClickListener(v -> requestNotifications());
+        form.addView(notifications, margin(0, 0, 0, 6));
+        MaterialButton exact = button("管理精确提醒");
+        exact.setOnClickListener(v -> { Intent intent = scheduler.exactAlarmSettingsIntent(); if (intent != null) try { startActivity(intent); } catch (Exception ignored) { feedback("请在系统设置中允许精确闹钟"); } });
+        form.addView(exact, margin(0, 0, 0, 6));
+        MaterialButton rebuild = button("重建未来 30 天提醒");
+        rebuild.setOnClickListener(v -> { scheduler.rebuild(); feedback("已重建未来 30 天提醒"); });
+        form.addView(rebuild, margin(0, 0, 0, 6));
+        MaterialButton export = button("导出加密备份");
+        export.setOnClickListener(v -> startActivityForResult(new Intent(Intent.ACTION_CREATE_DOCUMENT).setType("application/octet-stream").putExtra(Intent.EXTRA_TITLE, "personal-medication-backup.pmb"), REQUEST_EXPORT));
+        form.addView(export, margin(0, 0, 0, 6));
+        MaterialButton importButton = button("导入加密备份");
+        importButton.setOnClickListener(v -> startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT).setType("application/octet-stream").addCategory(Intent.CATEGORY_OPENABLE), REQUEST_IMPORT));
+        form.addView(importButton, margin(0, 0, 0, 6));
+        MaterialButton about = button("关于与版本");
+        about.setOnClickListener(v -> showAbout());
+        form.addView(about, margin(0, 0, 0, 6));
+        MaterialButton wipe = button("彻底删除本机数据");
+        wipe.setTextColor(palette.danger);
+        wipe.setOnClickListener(v -> confirmWipe());
+        form.addView(wipe);
+        MaterialAlertDialogBuilder builder = new MaterialAlertDialogBuilder(this)
+                .setTitle("设置与隐私")
+                .setView(form)
+                .setPositiveButton("关闭", null);
+        builder.show();
+    }
 
-    private void showSettings(){currentPage=PAGE_SETTINGS;setPageTitle("设置  ·  权限、数据与降级");content.removeAllViews();buildSettings();animateContent();}
-    private void keyDialogLegacy(){LinearLayout form=form();EditText key=input("DeepSeek Key（只在本机运行时输入）",false);key.setInputType(android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);form.addView(key);AlertDialog dialog=new AlertDialog.Builder(this).setTitle("保存 DeepSeek Key").setMessage("保存只执行本地 Keystore 加密/解密自检，不依赖网络；保存成功后请单独点击“测试连接”。Key 不会明文回显。").setView(form).setNegativeButton("关闭",null).setNeutralButton("删除 Key",null).setPositiveButton("保存",null).create();dialog.setOnShowListener(v->{dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(x->{try{ai.saveKey(key.getText().toString().trim());dialog.dismiss();toast("已安全保存；尚未测试连接");showSettings();}catch(Exception e){toast("保存失败："+friendlyUiError(e.getMessage()));}});dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener(x->{new AlertDialog.Builder(this).setTitle("删除已保存的 Key？").setMessage("删除后在线功能会停止调用，且无法恢复原 Key。").setNegativeButton("取消",null).setPositiveButton("删除",(d,w)->{ai.deleteKey();dialog.dismiss();showSettings();}).show();});});dialog.show();}
+    void launchExportBackup() {
+        startActivityForResult(new Intent(Intent.ACTION_CREATE_DOCUMENT).setType("application/octet-stream")
+                .putExtra(Intent.EXTRA_TITLE, "personal-medication-backup.pmb"), REQUEST_EXPORT);
+    }
 
-    private void keyDialog(){int origin=currentPage;LinearLayout form=form();EditText key=input("DeepSeek Key（只在本机运行时输入）",false);key.setInputType(android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);form.addView(key);AlertDialog dialog=new AlertDialog.Builder(this).setTitle("保存 DeepSeek Key").setMessage("保存只执行本机安全存储自检，不依赖网络；保存成功后请单独点击“测试连接”。Key 不会明文回显。").setView(scrollForm(form)).setNegativeButton("关闭",null).setNeutralButton("删除 Key",null).setPositiveButton("保存",null).create();dialog.setOnShowListener(v->{dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(x->{String value=key.getText().toString().trim();if(value.isEmpty()){key.setError("请输入 Key");key.requestFocus();return;}try{ai.saveKey(value);dialog.dismiss();showFeedback("已安全保存；尚未测试连接");if(origin==PAGE_ASSISTANT)showAssistant();else showSettings();}catch(Exception e){key.setError(friendlyUiError(e.getMessage()));}});dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener(x->{new AlertDialog.Builder(this).setTitle("删除已保存的 Key？").setMessage("删除后在线功能会停止调用，且无法恢复原 Key。").setNegativeButton("取消",null).setPositiveButton("删除",(d,w)->{ai.deleteKey();dialog.dismiss();showFeedback("已删除 Key");if(origin==PAGE_ASSISTANT)showAssistant();else showSettings();}).show();});});dialog.show();}
-    private void testAiConnection(){if(!ai.hasKey()){showFeedback("请先保存 DeepSeek Key");keyDialog();return;}if(connectionInFlight)return;connectionInFlight=true;showFeedback("正在测试连接，不会发送个人资料或图片");ai.testConnection(new AiClient.ConnectionCallback(){@Override public void success(String message){runOnUiThread(()->{connectionInFlight=false;showFeedback(message);if(currentPage==PAGE_SETTINGS||currentPage==PAGE_ASSISTANT) { if(currentPage==PAGE_SETTINGS) showSettings(); else showAssistant(); }});}@Override public void failure(String message){runOnUiThread(()->{connectionInFlight=false;showFeedback(message);if(currentPage==PAGE_SETTINGS||currentPage==PAGE_ASSISTANT) { if(currentPage==PAGE_SETTINGS) showSettings(); else showAssistant(); }});}});}
-    private String friendlyUiError(String message){if(message==null||message.isEmpty())return "本机安全存储不可用，请检查锁屏/系统安全设置";if(message.contains("SECURE_STORAGE_SELF_TEST_FAILED"))return "本机安全存储自检失败，请检查锁屏/系统安全设置后重试";if(message.contains("SECURE_STORAGE_UNAVAILABLE"))return "本机安全存储不可用，请检查系统安全设置";return message;}
+    private void requestNotifications() {
+        if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, REQUEST_NOTIFICATIONS);
+        } else feedback("通知权限已允许");
+    }
 
-    private void keyDialogWithDelete(){keyDialog();}
-    private void confirmDeleteMedication(LunaDatabase.MedicationRow med){new AlertDialog.Builder(this).setTitle("删除“"+med.displayName()+"”？").setMessage("将删除药物、批次、提醒计划、历史记录和关联资料，不能撤销。建议先导出加密备份。").setNegativeButton("取消",null).setPositiveButton("删除",(d,w)->{database.deleteMedication(med.id);scheduler.rebuild();showMedications();showFeedback("已删除 "+med.displayName());}).show();}
-    private void showFindingsLegacy(List<SafetyEngine.Finding> findings){LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);if(findings.isEmpty())box.addView(text("没有命中确定性规则。规则库不是完整临床相互作用数据库。",14,palette.secondary,false));for(SafetyEngine.Finding f:findings){LinearLayout item=card();item.addView(text(f.severity+" · "+f.kind,14,palette.warning,true));item.addView(text(f.message,14,palette.text,false));item.addView(text("证据等级 "+f.level+" · 来源："+f.source+" · 适用范围："+f.scope,12,palette.secondary,false));box.addView(item,mb(8));}new AlertDialog.Builder(this).setTitle("安全检查结果").setView(box).setPositiveButton("知道了",null).show();}
+    private void showAbout() {
+        new MaterialAlertDialogBuilder(this)
+                .setTitle("个人用药助手")
+                .setMessage("本地优先 · 可审计的个人健康日志\n\n版本 " + BuildConfig.VERSION_NAME + "（构建 " + BuildConfig.VERSION_CODE + "）\n包名 " + getPackageName() + "\n\n用药提醒、库存和安全检查不替代医生、药师、官方说明书或急救服务。")
+                .setPositiveButton("关闭", null)
+                .show();
+    }
 
-    private void showFindings(List<SafetyEngine.Finding> findings){LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);if(findings.isEmpty())box.addView(text("没有命中确定性规则。规则库不是完整临床相互作用数据库。",14,palette.secondary,false));for(SafetyEngine.Finding f:findings){LinearLayout item=card();int color="HIGH".equals(f.severity)?palette.danger:palette.warning;item.addView(text(findingSeverityLabel(f.severity)+" · "+findingKindLabel(f.kind),14,color,true));item.addView(text(f.message,14,palette.text,false));item.addView(text("证据等级 "+f.level+" · 来源："+f.source+" · 适用范围："+f.scope,12,palette.secondary,false));box.addView(item,mb(8));}new AlertDialog.Builder(this).setTitle("安全检查结果").setView(scrollForm(box)).setPositiveButton("知道了",null).show();}
+    private void confirmWipe() {
+        new MaterialAlertDialogBuilder(this)
+                .setTitle("彻底删除本机数据？")
+                .setMessage("将删除药物、批次、计划、历史、健康档案、资料索引、本地会话和 API Key，无法撤销。")
+                .setNegativeButton("取消", null)
+                .setPositiveButton("删除全部", (d, w) -> {
+                    database.clearData(true);
+                    assistant.deleteKey();
+                    new DataCipher(this).deleteKey();
+                    deletePrivateDocuments();
+                    scheduler.rebuild();
+                    showTab(TAB_TODAY);
+                    feedback("本机资料和 Key 已删除");
+                }).show();
+    }
 
-    private String findingSeverityLabel(String value){return "HIGH".equals(value)?"高优先级":"MEDIUM".equals(value)?"需要留意":"LOW".equals(value)?"低优先级":"提示";}
-    private String findingKindLabel(String value){return "DUPLICATE_INGREDIENT".equals(value)?"可能重复有效成分":"ALLERGY_CONFLICT".equals(value)?"过敏记录冲突":"EXPIRED".equals(value)?"批次已过期":"EXPIRING".equals(value)?"批次即将到期":"LOW_STOCK".equals(value)?"库存较低":"TIME_CONFLICT".equals(value)?"提醒时间重叠":"COURSE_END".equals(value)?"疗程即将结束":"本机规则提示";}
-    private List<SafetyEngine.Finding> safetyFindings(){List<LunaDatabase.MedicationRow> m=database.medications(false);List<LunaDatabase.BatchRow>b=database.allBatches();List<LunaDatabase.PlanRow>p=database.allPlans();return SafetyEngine.inspect(m,b,p,database.allergiesSummary(),System.currentTimeMillis());}
+    private void deletePrivateDocuments() {
+        File dir = new File(getFilesDir(), "documents");
+        File[] files = dir.listFiles();
+        if (files != null) for (File file : files) deleteTree(file);
+        if (dir.isDirectory()) dir.delete();
+    }
 
-    private void startCamera(){if(Build.VERSION.SDK_INT>=23&&checkSelfPermission(Manifest.permission.CAMERA)!=PackageManager.PERMISSION_GRANTED){requestPermissions(new String[]{Manifest.permission.CAMERA},REQ_CAMERA);return;}try{pendingCapture=privateFile("capture-"+System.currentTimeMillis()+".jpg");cameraOutputUri=FileProvider.getUriForFile(this,getPackageName()+".fileprovider",pendingCapture);Intent intent=new Intent(MediaStore.ACTION_IMAGE_CAPTURE);intent.putExtra(MediaStore.EXTRA_OUTPUT,cameraOutputUri);intent.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION|Intent.FLAG_GRANT_READ_URI_PERMISSION);startActivityForResult(intent,REQ_CAMERA);}catch(Exception error){pendingCapture=null;cameraOutputUri=null;toast("无法打开相机："+friendlyUiError(error.getMessage()));}}
-    private void startFilePicker(){Intent intent=new Intent(Intent.ACTION_OPEN_DOCUMENT).setType("*/*").addCategory(Intent.CATEGORY_OPENABLE);startActivityForResult(intent,REQ_FILE);}
-    @Override public void onRequestPermissionsResult(int requestCode,String[] permissions,int[] grantResults){super.onRequestPermissionsResult(requestCode,permissions,grantResults);if(requestCode==REQ_CAMERA&&grantResults.length>0&&grantResults[0]==PackageManager.PERMISSION_GRANTED)startCamera();}
-    @Override
-    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+    private void deleteTree(File file) {
+        if (file.isDirectory()) { File[] children = file.listFiles(); if (children != null) for (File child : children) deleteTree(child); }
+        file.delete();
+    }
+
+    @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
-        if (resultCode != RESULT_OK || (data == null && requestCode != REQ_CAMERA)) return;
-        try {
-            if (requestCode == REQ_CAMERA) {
-                if (pendingCapture == null || !pendingCapture.isFile() || pendingCapture.length() == 0) {
-                    Bundle extras = data == null ? null : data.getExtras();
-                    Bitmap bitmap = extras == null ? null : (Bitmap) extras.get("data");
-                    if (bitmap == null) { toast("相机没有返回图片"); return; }
-                    pendingCapture = privateFile("capture-" + System.currentTimeMillis() + ".jpg");
-                    try (OutputStream out = new FileOutputStream(pendingCapture)) {
-                        bitmap.compress(Bitmap.CompressFormat.JPEG, 92, out);
-                    }
-                }
-                List<VisionSource> cameraSources = new ArrayList<>();
-                File compressed = normalizeImage(pendingCapture);
-                cameraSources.add(new VisionSource(pendingCapture, compressed, "image/jpeg", 1));
-                cameraOutputUri = null;
-                confirmVisionSources(cameraSources);
-            } else if (requestCode == REQ_FILE) {
-                List<Uri> uris = new ArrayList<>();
-                if (data.getData() != null) uris.add(data.getData());
-                ClipData clips = data.getClipData();
-                if (clips != null) for (int i = 0; i < clips.getItemCount(); i++) uris.add(clips.getItemAt(i).getUri());
-                if (uris.isEmpty()) return;
-                if (uris.size() == 1 && isPdf(uris.get(0))) {
-                    File copy = copyToPrivate(uris.get(0));
-                    preparePdfSources(copy);
-                } else {
-                    List<VisionSource> sources = new ArrayList<>();
-                    for (Uri uri : uris) { File copy = copyToPrivate(uri); File compressed = normalizeImage(copy); sources.add(new VisionSource(copy, compressed, "image/jpeg", sources.size() + 1)); }
-                    confirmVisionSources(sources);
-                }
-            } else if (requestCode == REQ_EXPORT) {
-                Uri uri = data.getData();
-                if (uri == null) return;
-                JSONObject root = database.exportBundle();
-                String payload = BACKUP_PREFIX + new DataCipher(this).encrypt(root.toString());
-                try (OutputStream out = getContentResolver().openOutputStream(uri)) {
-                    if (out == null) throw new IllegalStateException("无法打开导出目标");
-                    out.write(payload.getBytes(java.nio.charset.StandardCharsets.UTF_8));
-                }
-                toast("加密备份已导出");
-            } else if (requestCode == REQ_IMPORT) {
-                Uri uri = data.getData();
-                if (uri == null) return;
-                String payload = readText(uri);
-                String prefix = payload.startsWith(BACKUP_PREFIX) ? BACKUP_PREFIX : LEGACY_BACKUP_PREFIX;
-                if (!payload.startsWith(prefix)) throw new IllegalStateException("不是个人用药助手加密备份文件");
-                JSONObject root = new JSONObject(new DataCipher(this).decrypt(payload.substring(prefix.length())));
-                new AlertDialog.Builder(this)
-                        .setTitle("替换本机数据？")
-                        .setMessage("导入将替换当前药物、批次、计划、健康和资料索引。")
-                        .setNegativeButton("取消", null)
-                        .setPositiveButton("替换", (dialog, which) -> {
-                            try {
-                                database.importBundle(root);
-                                scheduler.rebuild();
-                                showToday();
-                                toast("已导入加密备份");
-                            } catch (Exception e) {
-                                toast("导入失败：" + e.getMessage());
-                            }
-                        }).show();
-            }
-        } catch (Exception e) {
-            toast("文件操作失败：" + e.getMessage());
-        }
+        if (resultCode != RESULT_OK || data == null || data.getData() == null) return;
+        if (requestCode == REQUEST_EXPORT) exportBackup(data.getData());
+        else if (requestCode == REQUEST_IMPORT) importBackup(data.getData());
     }
-    private static final class VisionSource { final File original,compressed; final String mimeType,uploadMimeType; final int page; VisionSource(File original,File compressed,String mimeType,int page){this(original,compressed,mimeType,mimeType,page);} VisionSource(File original,File compressed,String mimeType,String uploadMimeType,int page){this.original=original;this.compressed=compressed;this.mimeType=mimeType;this.uploadMimeType=uploadMimeType;this.page=page;} }
-    private void confirmVisionSources(List<VisionSource> sources){if(sources==null||sources.isEmpty()){toast("没有可识别的图片");return;}long bytes=0;for(VisionSource source:sources)if(source.compressed!=null&&source.compressed.isFile())bytes+=source.compressed.length();LinearLayout box=card();box.addView(text("将发送 "+sources.size()+" 页图片给 deepseek-flash。原始文件仍保存在本机私有目录。",15,palette.text,false));box.addView(text("压缩后约 "+Math.max(1,bytes/1024)+" KB；只会发送你确认的图片，不会自动发送健康档案。",13,palette.secondary,false));AlertDialog dialog=new AlertDialog.Builder(this).setTitle("确认 AI 图片识别").setView(box).setNegativeButton("保存，稍后识别",(d,w)->saveWaitingSources(sources)).setPositiveButton(ai.hasKey()?"发送给 DeepSeek":"先保存待识别",null).create();dialog.setOnShowListener(v->dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(x->{dialog.dismiss();if(ai.hasKey()){visionQueue.clear();visionQueue.addAll(sources);visionIndex=0;recognizeNextVision();}else saveWaitingSources(sources);}));dialog.show();}
-    private void saveWaitingSources(List<VisionSource> sources){for(VisionSource source:sources){LunaDatabase.DocumentDraft d=visionDraft(source,"WAITING_KEY");database.addDocument(d);}showFeedback("已保存原文件，状态为等待识别；配置 Key 后可在资料页继续");showDocuments();}
-    private LunaDatabase.DocumentDraft visionDraft(VisionSource source,String status){LunaDatabase.DocumentDraft d=new LunaDatabase.DocumentDraft();d.uri=source.original.getAbsolutePath();d.mimeType=source.mimeType;d.sha256=safeSha256(source.original);d.pageNo=source.page;d.compressedUri=source.compressed==null?"":source.compressed.getAbsolutePath();d.compressedSha256=source.compressed!=null&&source.compressed.isFile()?safeSha256(source.compressed):"";d.status=status;d.model=AiClient.MODEL;d.promptVersion=AiClient.VISION_PROMPT_VERSION;d.requestAtMs=0;return d;}
-    private void recognizeNextVision(){if(visionIndex>=visionQueue.size()){showFeedback("AI 图片识别队列已处理");showDocuments();return;}VisionSource source=visionQueue.get(visionIndex);LunaDatabase.DocumentDraft draft=visionDraft(source,"PROCESSING");activeVisionDocumentId=database.addDocument(draft);if(currentPage==2)showDocuments();showFeedback("正在识别第 "+source.page+" 页");try{byte[] bytes=readBytes(source.compressed,5_000_000);ai.recognizeImage(bytes,source.uploadMimeType,source.page,new AiClient.VisionCallback(){@Override public void success(AiClient.VisionResult result){long documentId=activeVisionDocumentId;database.updateDocumentAi(documentId,"DRAFT",System.currentTimeMillis(),result.rawResponse,result.structuredJson,result.visibleText,"");activeVisionResult=result;runOnUiThread(()->{if(currentPage==2)showDocuments();visionConfirmation(documentId,result);});}@Override public void failure(String message){long documentId=activeVisionDocumentId;database.updateDocumentAi(documentId,"FAILED",System.currentTimeMillis(),"","","",message);runOnUiThread(()->{if(currentPage==2)showDocuments();showFeedback("第 "+source.page+" 页识别失败，可稍后重试");visionIndex++;recognizeNextVision();});}});}catch(Exception error){database.updateDocumentAi(activeVisionDocumentId,"FAILED",System.currentTimeMillis(),"","","",friendlyUiError(error.getMessage()));showFeedback("无法读取识别图片："+friendlyUiError(error.getMessage()));visionIndex++;recognizeNextVision();}}
-    private void visionConfirmation(long documentId,AiClient.VisionResult result){LinearLayout form=form();form.addView(text("AI 只转录了图片中可见内容；空白字段代表未识别，不是推测。请逐项确认后才会写入药物。",14,palette.warning,false));EditText brand=input("商品名",false),generic=input("通用名",false),ingredients=input("有效成分",true),strength=input("规格",false),dosage=input("剂型",false),maker=input("厂家",false),approval=input("批准文号",false),traceability=input("条码/追溯码文本（可选）",false),lot=input("批号",false),production=input("生产日期 YYYY-MM-DD",false),expiry=input("有效期 YYYY-MM-DD",false),storage=input("储存条件",true),indication=input("适应症/用途",true),contra=input("禁忌/注意事项",true),title=input("说明书标题",false),chapter=input("章节",false),version=input("版本/修订日期",false),links=input("官方链接（可选）",false);for(EditText field:new EditText[]{brand,generic,ingredients,strength,dosage,maker,approval,traceability,lot,production,expiry,storage,indication,contra,title,chapter,version,links})form.addView(field);brand.setText(result.brandName);generic.setText(result.genericName);ingredients.setText(result.ingredients);strength.setText(result.strength);dosage.setText(result.dosageForm);maker.setText(result.manufacturer);approval.setText(result.approvalNo);traceability.setText(result.traceabilityCode);lot.setText(result.lotNo);production.setText(result.productionDate);expiry.setText(result.expiryDate);storage.setText(result.storageConditions);indication.setText(result.indication);contra.setText(result.contraindications);title.setText(result.documentTitle);chapter.setText(result.chapter);version.setText(result.version);AlertDialog dialog=new AlertDialog.Builder(this).setTitle("确认 AI 识别草稿").setMessage(result.uncertainFields.isEmpty()?"没有结构化不确定字段；仍请对照原图确认。":"需要重点核对：\n"+result.uncertainFields).setView(form).setNegativeButton("稍后确认",(d,w)->{visionIndex++;recognizeNextVision();}).setPositiveButton("确认并保存",null).create();dialog.setOnShowListener(v->dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(x->{if(!validDate(production.getText().toString())||!validDate(expiry.getText().toString())){toast("日期必须为空或 YYYY-MM-DD");return;}saveVisionConfirmed(documentId,result,brand,generic,ingredients,strength,dosage,maker,approval,traceability,lot,production,expiry,storage,indication,contra,title,chapter,version,links,dialog);}));dialog.show();}
-    private void saveVisionConfirmed(long documentId,AiClient.VisionResult result,EditText brand,EditText generic,EditText ingredients,EditText strength,EditText dosage,EditText maker,EditText approval,EditText traceability,EditText lot,EditText production,EditText expiry,EditText storage,EditText indication,EditText contra,EditText title,EditText chapter,EditText version,EditText links,Dialog dialog){try{String brandValue=brand.getText().toString().trim(),genericValue=generic.getText().toString().trim(),traceabilityValue=traceability.getText().toString().trim();if(brandValue.isEmpty()&&genericValue.isEmpty()&&title.getText().toString().trim().isEmpty()){toast("至少确认商品名、通用名或说明书标题");return;}JSONObject corrected=new JSONObject().put("brandName",brandValue).put("genericName",genericValue).put("ingredients",ingredients.getText().toString().trim()).put("strength",strength.getText().toString().trim()).put("dosageForm",dosage.getText().toString().trim()).put("manufacturer",maker.getText().toString().trim()).put("approvalNo",approval.getText().toString().trim()).put("traceabilityCode",traceabilityValue).put("lotNo",lot.getText().toString().trim()).put("productionDate",production.getText().toString().trim()).put("expiryDate",expiry.getText().toString().trim()).put("storageConditions",storage.getText().toString().trim()).put("indication",indication.getText().toString().trim()).put("contraindications",contra.getText().toString().trim()).put("title",title.getText().toString().trim()).put("chapter",chapter.getText().toString().trim()).put("version",version.getText().toString().trim());long medId=0;if(!brandValue.isEmpty()||!genericValue.isEmpty()){LunaDatabase.MedicationDraft medication=new LunaDatabase.MedicationDraft();medication.brandName=brandValue;medication.genericName=genericValue;medication.ingredients=ingredients.getText().toString().trim();medication.strength=strength.getText().toString().trim();medication.dosageForm=dosage.getText().toString().trim();medication.manufacturer=maker.getText().toString().trim();medication.approvalNo=approval.getText().toString().trim();medication.indication=indication.getText().toString().trim();medication.contraindications=contra.getText().toString().trim();medication.notes=joinNonEmpty(storage.getText().toString().trim(),traceabilityValue.isEmpty()?"":"条码/追溯码："+traceabilityValue);medId=database.addMedication(medication);if(!lot.getText().toString().trim().isEmpty()||!expiry.getText().toString().trim().isEmpty()||!production.getText().toString().trim().isEmpty()){LunaDatabase.BatchDraft batch=new LunaDatabase.BatchDraft();batch.lotNo=lot.getText().toString().trim();batch.productionDate=production.getText().toString().trim();batch.expiryDate=expiry.getText().toString().trim();batch.storageConditions=storage.getText().toString().trim();database.addBatch(medId,batch);}}database.updateDocumentReview(documentId,corrected.toString(),chapter.getText().toString().trim(),version.getText().toString().trim(),maker.getText().toString().trim(),links.getText().toString().trim(),true);dialog.dismiss();visionIndex++;scheduler.rebuild();toast(medId>0?"已确认并写入药物、批次与本地资料":"已确认并保存本地资料");recognizeNextVision();}catch(Exception error){toast("保存识别结果失败："+friendlyUiError(error.getMessage()));}}
-    private void preparePdfSources(File file){toast("正在按页准备 PDF 图片");new Thread(()->{try{PdfRenderer renderer=new PdfRenderer(ParcelFileDescriptor.open(file,ParcelFileDescriptor.MODE_READ_ONLY));List<VisionSource> sources=new ArrayList<>();for(int i=0;i<renderer.getPageCount();i++){PdfRenderer.Page page=renderer.openPage(i);Bitmap bitmap=Bitmap.createBitmap(page.getWidth(),page.getHeight(),Bitmap.Config.ARGB_8888);page.render(bitmap,null,null,PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY);page.close();File compressed=privateFile("ai-pdf-"+System.currentTimeMillis()+"-"+(i+1)+".jpg");writeNormalizedBitmap(bitmap,compressed);bitmap.recycle();sources.add(new VisionSource(file,compressed,"application/pdf","image/jpeg",i+1));}renderer.close();runOnUiThread(()->confirmVisionSources(sources));}catch(Exception error){runOnUiThread(()->toast("PDF 准备失败："+friendlyUiError(error.getMessage())));}}).start();}
-    private boolean isPdf(Uri uri){String type=getContentResolver().getType(uri);return type!=null&&type.toLowerCase(Locale.ROOT).contains("pdf");}
-    private File normalizeImage(File original)throws Exception{Bitmap bitmap=BitmapFactory.decodeFile(original.getAbsolutePath());if(bitmap==null)throw new IllegalArgumentException("图片无法读取");int orientation=ExifInterface.ORIENTATION_NORMAL;try{orientation=new ExifInterface(original.getAbsolutePath()).getAttributeInt(ExifInterface.TAG_ORIENTATION,ExifInterface.ORIENTATION_NORMAL);}catch(Exception ignored){}if(orientation!=ExifInterface.ORIENTATION_NORMAL){Matrix matrix=new Matrix();if(orientation==ExifInterface.ORIENTATION_ROTATE_90)matrix.postRotate(90);else if(orientation==ExifInterface.ORIENTATION_ROTATE_180)matrix.postRotate(180);else if(orientation==ExifInterface.ORIENTATION_ROTATE_270)matrix.postRotate(270);Bitmap rotated=Bitmap.createBitmap(bitmap,0,0,bitmap.getWidth(),bitmap.getHeight(),matrix,true);if(rotated!=bitmap){bitmap.recycle();bitmap=rotated;}}File compressed=privateFile("ai-image-"+System.currentTimeMillis()+".jpg");writeNormalizedBitmap(bitmap,compressed);bitmap.recycle();return compressed;}
-    private void writeNormalizedBitmap(Bitmap bitmap,File target)throws Exception{int max=2200;float scale=Math.min(1f,Math.min((float)max/bitmap.getWidth(),(float)max/bitmap.getHeight()));Bitmap output=bitmap;if(scale<1f)output=Bitmap.createScaledBitmap(bitmap,Math.max(1,Math.round(bitmap.getWidth()*scale)),Math.max(1,Math.round(bitmap.getHeight()*scale)),true);try(OutputStream out=new FileOutputStream(target)){if(!output.compress(Bitmap.CompressFormat.JPEG,88,out))throw new IllegalStateException("图片压缩失败");}if(output!=bitmap)output.recycle();}
-    private byte[] readBytes(File file,int maxBytes)throws Exception{if(file==null||!file.isFile())throw new IllegalArgumentException("压缩图片不存在");if(file.length()>maxBytes)throw new IllegalArgumentException("图片过大，请重新导入较小页面");try(InputStream in=new FileInputStream(file);ByteArrayOutputStream out=new ByteArrayOutputStream()){byte[] buffer=new byte[8192];int n,total=0;while((n=in.read(buffer))>=0){total+=n;if(total>maxBytes)throw new IllegalArgumentException("图片过大，请重新导入较小页面");out.write(buffer,0,n);}return out.toByteArray();}}
 
-    private File copyToPrivate(Uri uri)throws Exception{File file=privateFile("import-"+System.currentTimeMillis());try(InputStream in=getContentResolver().openInputStream(uri);OutputStream out=new FileOutputStream(file)){byte[] buf=new byte[8192];int n;while((n=in.read(buf))>=0)out.write(buf,0,n);}return file;}
-    private File privateFile(String name){File dir=new File(getFilesDir(),"documents");if(!dir.exists())dir.mkdirs();return new File(dir,name);}
-    private void deletePrivateFile(String path){try{if(path==null||path.isEmpty())return;File root=getFilesDir().getCanonicalFile();File target=new File(path).getCanonicalFile();if(target.toPath().startsWith(root.toPath())&&target.isFile())target.delete();}catch(Exception ignored){}}
-    private String readText(Uri uri)throws Exception{StringBuilder r=new StringBuilder();try(InputStream in=getContentResolver().openInputStream(uri)){byte[] b=new byte[8192];int n;while((n=in.read(b))>=0)r.append(new String(b,0,n,java.nio.charset.StandardCharsets.UTF_8));}return r.toString();}
-    private String sha256(File file)throws Exception{MessageDigest digest=MessageDigest.getInstance("SHA-256");try(InputStream in=new FileInputStream(file)){byte[]b=new byte[8192];int n;while((n=in.read(b))>=0)digest.update(b,0,n);}StringBuilder r=new StringBuilder();for(byte b:digest.digest())r.append(String.format(Locale.US,"%02x",b));return r.toString();}
-    private String safeSha256(File file){try{return file==null?"":sha256(file);}catch(Exception ignored){return "";}}
+    private void exportBackup(android.net.Uri uri) {
+        new Thread(() -> {
+            try (OutputStream out = getContentResolver().openOutputStream(uri)) {
+                if (out == null) throw new IllegalArgumentException("无法写入备份");
+                String encrypted = new DataCipher(this).encrypt(database.exportBundle().toString());
+                out.write((BACKUP_PREFIX + encrypted).getBytes(StandardCharsets.UTF_8));
+                runOnUiThread(() -> feedback("加密备份已导出；API Key 未包含在备份中"));
+            } catch (Exception error) { runOnUiThread(() -> feedback("备份导出失败：" + safeMessage(error))); }
+        }).start();
+    }
 
-    private void setPageTitle(String title){if(pageTitle!=null)pageTitle.setText(title);if(scrollView!=null)scrollView.scrollTo(0,0);if(backButton!=null)backButton.setVisibility(currentPage>=PAGE_ASSISTANT?View.VISIBLE:View.GONE);}
-    private void selectNav(int selected){for(int i=0;i<navItems.size();i++){View view=navItems.get(i);boolean active=i==selected;view.setBackground(round(active?palette.primarySoft:Color.TRANSPARENT,14));LinearLayout item=(LinearLayout)view;ImageView icon=(ImageView)item.getChildAt(0);TextView label=(TextView)item.getChildAt(1);icon.setColorFilter(active?palette.primary:palette.secondary);label.setTextColor(active?palette.primary:palette.secondary);}}
-    private View navItem(int iconRes,String label){LinearLayout item=new LinearLayout(this);item.setOrientation(LinearLayout.VERTICAL);item.setGravity(Gravity.CENTER);item.setPadding(dp(2),dp(3),dp(2),dp(2));ImageView icon=new ImageView(this);icon.setImageResource(iconRes);icon.setColorFilter(palette.secondary);item.addView(icon,new LinearLayout.LayoutParams(dp(24),dp(26)));TextView name=text(label,11,palette.secondary,true);name.setGravity(Gravity.CENTER);item.addView(name,new LinearLayout.LayoutParams(-1,dp(23)));UiKit.press(item);return item;}
-    private ImageButton iconButton(int iconRes){ImageButton button=new ImageButton(this);button.setImageResource(iconRes);button.setImageTintList(ColorStateList.valueOf(palette.primary));button.setBackground(rippleBackground(Color.TRANSPARENT,palette.primarySoft,14));button.setPadding(dp(10),dp(10),dp(10),dp(10));UiKit.press(button);return button;}
-    private void animateContent(){boolean animate=!suppressPageAnimation;suppressPageAnimation=false;for(int i=0;i<content.getChildCount();i++){View child=content.getChildAt(i);if(animate)UiKit.enter(this,child,i);else UiKit.reset(child);}}
-    private TextView sectionLabel(String value){return text(value,14,palette.secondary,true);}
-    private ScrollView scrollForm(View child){ScrollView scroll=new ScrollView(this);scroll.setFillViewport(true);scroll.setPadding(0,0,0,dp(4));scroll.addView(child,new ScrollView.LayoutParams(-1,-2));return scroll;}
-    private Spinner choiceSpinner(String[] labels){Spinner spinner=new Spinner(this);spinner.setAdapter(new ArrayAdapter<>(this,android.R.layout.simple_spinner_dropdown_item,labels));spinner.setMinimumHeight(dp(48));spinner.setBackground(round(palette.soft,14));return spinner;}
-    private int indexOf(String[] values,String value){if(value!=null)for(int i=0;i<values.length;i++)if(value.equals(values[i]))return i;return 0;}
-    private void showFeedback(String message){showFeedback(message,null,null);}
-    private void showFeedback(String message,String action,View.OnClickListener listener){if(feedbackBar==null)return;feedbackText.setText(message==null?"":message);feedbackAction.setVisibility(action==null?View.GONE:View.VISIBLE);if(action!=null){feedbackAction.setText(action);feedbackAction.setTextColor(palette.text);feedbackAction.setBackground(round(palette.surface,999));feedbackAction.setOnClickListener(v->{if(listener!=null)listener.onClick(v);feedbackBar.setVisibility(View.GONE);});}feedbackBar.setVisibility(View.VISIBLE);feedbackBar.removeCallbacks(hideFeedback);feedbackBar.postDelayed(hideFeedback,3200L);}
-    private final Runnable hideFeedback=()->{if(feedbackBar!=null)feedbackBar.setVisibility(View.GONE);};
-    private RippleDrawable rippleBackground(int background,int ripple,int radius){return new RippleDrawable(ColorStateList.valueOf(ripple),round(background,radius),round(Color.WHITE,radius));}
-    private LinearLayout emptyCard(String message,String action,View.OnClickListener listener){LinearLayout box=card();box.addView(text(message,16,palette.text,false));if(action!=null){Button button=outlineButton(action,palette.primary);button.setOnClickListener(listener);box.addView(button,mt(10));}return box;}
+    private void importBackup(android.net.Uri uri) {
+        new Thread(() -> {
+            try (InputStream input = getContentResolver().openInputStream(uri)) {
+                String raw = readAll(input);
+                String encrypted = raw.startsWith(BACKUP_PREFIX) ? raw.substring(BACKUP_PREFIX.length())
+                        : raw.startsWith(LEGACY_BACKUP_PREFIX) ? raw.substring(LEGACY_BACKUP_PREFIX.length())
+                        : raw.startsWith(OLD_BACKUP_PREFIX) ? raw.substring(OLD_BACKUP_PREFIX.length()) : "";
+                if (encrypted.isEmpty()) throw new IllegalArgumentException("备份格式无法识别");
+                String decoded = new DataCipher(this).decryptStrict(encrypted);
+                JSONObject bundle = new JSONObject(decoded);
+                runOnUiThread(() -> new MaterialAlertDialogBuilder(this).setTitle("替换本机资料？").setMessage("导入会替换当前药物、计划、健康记录、资料索引和本地会话，不会导入 API Key。")
+                        .setNegativeButton("取消", null).setPositiveButton("替换", (d, w) -> { try { database.importBundle(bundle); scheduler.rebuild(); showTab(TAB_TODAY); feedback("加密备份已导入"); } catch (Exception error) { feedback("备份导入失败：" + safeMessage(error)); } }).show());
+            } catch (Exception error) { runOnUiThread(() -> feedback("备份导入失败：" + safeMessage(error))); }
+        }).start();
+    }
 
-    private String personalPreview(){StringBuilder r=new StringBuilder();List<LunaDatabase.MedicationRow> meds=database.medications(false);r.append("当前有效药物：");for(int i=0;i<meds.size()&&i<8;i++){if(i>0)r.append("、");r.append(meds.get(i).displayName());}String allergies=database.allergiesSummary();r.append("\n过敏记录：").append(allergies.isEmpty()?"无已确认记录":allergies);r.append("\n其他健康资料：仅在你明确选择并确认后发送");return r.toString();}
-    private void recordOccurrence(LunaDatabase.OccurrenceRow row,String action,String note,String feedback){database.applyOccurrenceAction(row.id,action,System.currentTimeMillis(),ReminderScheduler.OP_SNOOZE.equals(action)?15*60*1000L:0,note);scheduler.rebuild();suppressPageAnimation=true;showToday();if(ReminderScheduler.OP_TAKEN.equals(action)){showFeedback(feedback,"撤销",v->{database.applyOccurrenceAction(row.id,ReminderScheduler.OP_UNDO,System.currentTimeMillis(),0,"用户撤销");scheduler.rebuild();suppressPageAnimation=true;showToday();showFeedback("已撤销这次服用记录");});}else showFeedback(feedback);}
-    private String planLabel(LunaDatabase.PlanRow p){String type=planTypeLabel(p.type);String times="按需".equals(type)?"需要时记录":p.timesCsv;String detail=joinNonEmpty(type,times,p.dose);if("INTERVAL".equals(p.type)&&p.intervalHours>0)detail=joinNonEmpty(type,"每 "+p.intervalHours+" 小时",p.dose);if("WEEKLY".equals(p.type))detail=joinNonEmpty(type,weekdayLabel(p.weekdaysMask),p.timesCsv,p.dose);return (p.paused?"已暂停 · ":"")+detail+(p.startDate.isEmpty()?"":" · 从 "+p.startDate+" 起");}
-    private String planTypeLabel(String value){return "DAILY".equals(value)?"每天":"WEEKLY".equals(value)?"每周":"INTERVAL".equals(value)?"按间隔":"PRN".equals(value)?"按需":"TEMP".equals(value)?"临时疗程":"自定义计划";}
-    private String weekdayLabel(int mask){String[] labels={"周一","周二","周三","周四","周五","周六","周日"};StringBuilder r=new StringBuilder();for(int i=0;i<7;i++)if((mask&(1<<i))!=0){if(r.length()>0)r.append("、");r.append(labels[i]);}return r.length()==0?"未选择日期":r.toString();}
-    private String medicationStatusLabel(String value){return "ACTIVE".equals(value)?"正在服用":"ARCHIVED".equals(value)?"已停用":"未分类";}
-    private String batchStateLabel(String value){return "IN_STOCK".equals(value)?"有库存":"OPENED".equals(value)?"已开封":"EXPIRED".equals(value)?"已过期":"DISCARDED".equals(value)?"已丢弃":"未分类";}
-    private String healthKindLabel(String value){return "CONDITION".equals(value)?"疾病或长期情况":"ALLERGY".equals(value)?"过敏记录":"SURGERY".equals(value)?"手术史":"ADVERSE".equals(value)?"不良反应":"ORGAN".equals(value)?"器官或生理情况":"PREGNANCY".equals(value)?"孕产信息":"MED_HISTORY".equals(value)?"既往用药史":"资料备注";}
-    private String documentStatusLabel(String value){return "CONFIRMED".equals(value)?"已确认":"FAILED".equals(value)?"识别失败":"WAITING_KEY".equals(value)?"等待识别":"PROCESSING".equals(value)?"正在识别":"DRAFT".equals(value)?"待确认":"LEGACY".equals(value)?"旧版待整理":"待确认";}
-    private String effortLabel(String value){return "none".equals(value)?"快速":"low".equals(value)?"较低":"high".equals(value)?"标准":"max".equals(value)?"最高":value;}
-    private String dayPart(long ms){int hour=Integer.parseInt(new SimpleDateFormat("HH",Locale.US).format(new Date(ms)));return hour<6?"夜间":hour<12?"上午":hour<18?"下午":"晚上";}
-    private String statusLabel(String status){return "TAKEN".equals(status)?"已服用":"SKIPPED".equals(status)?"已跳过":"MISSED".equals(status)?"漏服":"SNOOZED".equals(status)?"稍后":"待确认";}
-    private int statusColor(String status){return "TAKEN".equals(status)?palette.primary:"MISSED".equals(status)?palette.danger:palette.warning;}
-    private int statusBackground(String status){return "TAKEN".equals(status)?palette.primarySoft:"MISSED".equals(status)?palette.dangerSoft:palette.warningSoft;}
-    private String joinNonEmpty(String... values){StringBuilder r=new StringBuilder();for(String v:values)if(v!=null&&!v.trim().isEmpty()){if(r.length()>0)r.append(" · ");r.append(v);}return r.toString();}
-    private String todayLabel(){return new SimpleDateFormat("M月d日 E",Locale.CHINA).format(new Date());}
-    private String formatTime(long ms){return new SimpleDateFormat("HH:mm",Locale.US).format(new Date(ms));}
-    private boolean validDate(String value){if(value==null||value.trim().isEmpty())return true;try{LocalDate.parse(value.trim());return value.trim().matches("20\\d{2}-\\d{2}-\\d{2}");}catch(Exception e){return false;}}
-    private int parseInt(String value,int fallback){try{return Integer.parseInt(value.trim());}catch(Exception e){return fallback;}}
-    private int parseDays(String value){int mask=0;for(char c:value.toCharArray())if(c>='1'&&c<='7')mask|=1<<(c-'1');return mask==0?127:mask;}
-    private String maskToDays(int mask){StringBuilder r=new StringBuilder();for(int i=0;i<7;i++)if((mask&(1<<i))!=0)r.append(i+1);return r.toString();}
-    private long parseDateTime(String value){try{return new SimpleDateFormat("yyyy-MM-dd HH:mm",Locale.US).parse(value).getTime();}catch(Exception e){return 0;}}
-    private int dp(int value){return Math.round(value*getResources().getDisplayMetrics().density);}
-    private LinearLayout form(){LinearLayout l=new LinearLayout(this);l.setOrientation(LinearLayout.VERTICAL);l.setPadding(dp(4),0,dp(4),0);return l;}
-    private EditText input(String hint,boolean multi){EditText e=new EditText(this);e.setHint(hint);e.setTextSize(15);e.setPadding(dp(12),dp(6),dp(12),dp(6));e.setBackground(round(palette.soft,14));e.setSingleLine(!multi);if(multi){e.setMinLines(2);e.setGravity(Gravity.TOP);}LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,multi?dp(72):dp(48));p.setMargins(0,dp(5),0,dp(5));e.setLayoutParams(p);return e;}
-    private TextView text(String value,float size,int color,boolean bold){TextView t=new TextView(this);t.setText(value);t.setTextSize(size);t.setTextColor(color);t.setGravity(Gravity.CENTER_VERTICAL);t.setIncludeFontPadding(false);t.setTypeface(Typeface.create("sans",bold?Typeface.BOLD:Typeface.NORMAL));t.setLineSpacing(2,1);return t;}
-    private LinearLayout card(){LinearLayout l=new LinearLayout(this);l.setOrientation(LinearLayout.VERTICAL);l.setPadding(dp(16),dp(14),dp(16),dp(14));l.setBackground(round(palette.surface,18));l.setElevation(dp(2));return l;}
-    private LinearLayout infoCard(String msg){LinearLayout l=card();l.addView(text(msg,14,palette.secondary,false));return l;}
-    private LinearLayout emptyCard(String msg){return emptyCard(msg,null,null);}
-    private Button navButton(String label){Button b=new Button(this);b.setText(label);b.setTextSize(13);b.setAllCaps(false);b.setMinHeight(dp(48));b.setMinWidth(dp(48));b.setPadding(dp(8),0,dp(8),0);b.setStateListAnimator(null);b.setBackgroundColor(Color.TRANSPARENT);UiKit.press(b);return b;}
-    private Button actionButton(String label,int bg,int fg){Button b=navButton(label);b.setTextColor(fg);b.setBackground(rippleBackground(bg,Color.argb(38,0,0,0),999));b.setCompoundDrawableTintList(ColorStateList.valueOf(fg));return b;}
-    private Button outlineButton(String label,int fg){Button b=navButton(label);b.setTextColor(fg);b.setBackground(rippleBackground(palette.surface,palette.primarySoft,999));b.setCompoundDrawableTintList(ColorStateList.valueOf(fg));return b;}
-    private GradientDrawable round(int color,int radius){GradientDrawable d=new GradientDrawable();d.setColor(color);d.setCornerRadius(dp(radius));return d;}
-    private LinearLayout.LayoutParams mb(int v){LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,-2);p.setMargins(0,0,0,dp(v));return p;}
-    private LinearLayout.LayoutParams mt(int v){LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,-2);p.setMargins(0,dp(v),0,0);return p;}
-    private void toast(String message){showFeedback(message);}
-    private void confirmWipe(){new AlertDialog.Builder(this).setTitle("彻底删除本机数据？").setMessage("将删除药物、批次、计划、历史、健康档案、说明书原文件/索引和本地 AI Key，无法撤销。").setNegativeButton("取消",null).setPositiveButton("删除全部",(d,w)->{wipePrivateDocuments();database.clearData(true);new DataCipher(this).deleteKey();ai.deleteKey();scheduler.rebuild();showToday();}).show();}
-    private void wipePrivateDocuments(){File dir=new File(getFilesDir(),"documents");File[] files=dir.listFiles();if(files!=null)for(File file:files){if(file.isFile())file.delete();else deleteTree(file);}if(dir.isDirectory())dir.delete();}
-    private void deleteTree(File dir){File[] files=dir.listFiles();if(files!=null)for(File file:files){if(file.isDirectory())deleteTree(file);else file.delete();}dir.delete();}
+    private static String readAll(InputStream input) throws Exception {
+        if (input == null) throw new IllegalArgumentException("无法读取备份");
+        ByteArrayOutputStream out = new ByteArrayOutputStream(); byte[] buffer = new byte[8192]; int n; int total = 0;
+        while ((n = input.read(buffer)) >= 0) { total += n; if (total > 8_000_000) throw new IllegalArgumentException("备份文件过大"); out.write(buffer, 0, n); }
+        return out.toString(StandardCharsets.UTF_8.name());
+    }
 
+    String safeMessage(Exception error) {
+        String value = error.getMessage();
+        return value == null || value.isEmpty() ? "请稍后重试" : value.replaceAll("(?i)(api[- ]?key|bearer)\\s*[:=]?\\s*\\S+", "$1 [已隐藏]");
+    }
+
+    void showMedicationEditor(LunaDatabase.MedicationRow existing) {
+        LinearLayout form = verticalForm();
+        TextInputEditText brand = addField(form, "商品名", existing == null ? "" : existing.brandName, false);
+        TextInputEditText generic = addField(form, "通用名", existing == null ? "" : existing.genericName, false);
+        TextInputEditText ingredients = addField(form, "有效成分", existing == null ? "" : existing.ingredients, true);
+        TextInputEditText strength = addField(form, "规格", existing == null ? "" : existing.strength, false);
+        TextInputEditText dosage = addField(form, "剂型", existing == null ? "" : existing.dosageForm, false);
+        TextInputEditText manufacturer = addField(form, "厂家", existing == null ? "" : existing.manufacturer, false);
+        TextInputEditText approval = addField(form, "批准文号", existing == null ? "" : existing.approvalNo, false);
+        TextInputEditText indication = addField(form, "用途/适应症", existing == null ? "" : existing.indication, true);
+        TextInputEditText contraindications = addField(form, "禁忌/注意事项", existing == null ? "" : existing.contraindications, true);
+        TextInputEditText notes = addField(form, "备注", existing == null ? "" : existing.notes, true);
+        ScrollView scroll = new ScrollView(this); scroll.addView(form);
+        AlertDialog dialog = new MaterialAlertDialogBuilder(this).setTitle(existing == null ? "添加药物" : "编辑药物").setView(scroll).setNegativeButton("取消", null).setPositiveButton("保存", null).create();
+        dialog.setOnShowListener(v -> dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(x -> {
+            String brandValue = value(brand), genericValue = value(generic);
+            if (brandValue.isEmpty() && genericValue.isEmpty()) { brand.setError("至少填写商品名或通用名"); return; }
+            LunaDatabase.MedicationDraft draft = new LunaDatabase.MedicationDraft();
+            draft.brandName = brandValue; draft.genericName = genericValue; draft.ingredients = value(ingredients); draft.strength = value(strength); draft.dosageForm = value(dosage); draft.manufacturer = value(manufacturer); draft.approvalNo = value(approval); draft.indication = value(indication); draft.contraindications = value(contraindications); draft.notes = value(notes); draft.status = existing == null ? "ACTIVE" : existing.status;
+            if (existing == null) database.addMedication(draft); else database.updateMedication(existing.id, draft);
+            dialog.dismiss(); scheduler.rebuild(); showTab(TAB_MEDICATIONS); feedback(existing == null ? "药物已添加" : "药物已保存");
+        }));
+        dialog.show();
+    }
+
+    void showMedicationMenu(LunaDatabase.MedicationRow medication) {
+        String toggle = "ACTIVE".equals(medication.status) ? "停用药物" : "恢复药物";
+        new MaterialAlertDialogBuilder(this).setTitle(medication.displayName()).setItems(new String[]{toggle, "删除药物"}, (d, which) -> {
+            if (which == 0) { database.setMedicationStatus(medication.id, "ACTIVE".equals(medication.status) ? "ARCHIVED" : "ACTIVE"); scheduler.rebuild(); showTab(TAB_MEDICATIONS); }
+            else new MaterialAlertDialogBuilder(this).setTitle("删除这个药物？").setMessage("将删除该药物、批次、计划和资料索引，不能撤销。")
+                    .setNegativeButton("取消", null).setPositiveButton("删除", (x, y) -> { database.deleteMedication(medication.id); scheduler.rebuild(); showTab(TAB_MEDICATIONS); feedback("药物已删除"); }).show();
+        }).show();
+    }
+
+    void showBatchManager(LunaDatabase.MedicationRow medication) {
+        LinearLayout list = verticalForm();
+        List<LunaDatabase.BatchRow> batches = database.batches(medication.id);
+        if (batches.isEmpty()) list.addView(label("还没有实际药盒批次；没有批次时服用不会伪造扣减。"));
+        for (LunaDatabase.BatchRow row : batches) {
+            LinearLayout line = new LinearLayout(this); line.setGravity(Gravity.CENTER_VERTICAL);
+            TextView summary = label("批号 " + textOr(row.lotNo, "未填写") + " · " + formatQuantity(row.quantity) + row.quantityUnit + " · " + batchState(row.state) + " · 到期 " + textOr(row.expiryDate, "未填写"));
+            line.addView(summary, new LinearLayout.LayoutParams(0, dp(52), 1));
+            MaterialButton edit = button("编辑"); edit.setOnClickListener(v -> showBatchEditor(medication, row)); line.addView(edit);
+            MaterialButton delete = button("删除"); delete.setTextColor(palette.danger); delete.setOnClickListener(v -> new MaterialAlertDialogBuilder(this).setTitle("删除这个批次？").setMessage("将删除批号和库存记录，不能撤销。").setNegativeButton("取消", null).setPositiveButton("删除", (d, w) -> { database.deleteBatch(row.id); showBatchManager(medication); }).show()); line.addView(delete);
+            list.addView(line);
+        }
+        MaterialButton add = button("添加实际批次"); add.setOnClickListener(v -> showBatchEditor(medication, null)); list.addView(add, margin(0, 8, 0, 0));
+        ScrollView scroll = new ScrollView(this); scroll.addView(list);
+        new MaterialAlertDialogBuilder(this).setTitle(medication.displayName() + " · 实际批次").setView(scroll).setPositiveButton("关闭", null).show();
+    }
+
+    private void showBatchEditor(LunaDatabase.MedicationRow medication, LunaDatabase.BatchRow existing) {
+        LinearLayout form = verticalForm();
+        TextInputEditText lot = addField(form, "批号", existing == null ? "" : existing.lotNo, false);
+        TextInputEditText quantity = addField(form, "数量", existing == null ? "0" : Double.toString(existing.quantity), false); quantity.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
+        TextInputEditText unit = addField(form, "数量单位，例如片/瓶", existing == null ? "片" : existing.quantityUnit, false);
+        TextInputEditText production = addField(form, "生产日期 YYYY-MM-DD", existing == null ? "" : existing.productionDate, false);
+        TextInputEditText expiry = addField(form, "有效期 YYYY-MM-DD", existing == null ? "" : existing.expiryDate, false);
+        TextInputEditText opened = addField(form, "开封日期 YYYY-MM-DD", existing == null ? "" : existing.openedDate, false);
+        TextInputEditText location = addField(form, "存放位置", existing == null ? "" : existing.storageLocation, false);
+        TextInputEditText conditions = addField(form, "储存条件", existing == null ? "" : existing.storageConditions, false);
+        AutoCompleteTextView state = addChoice(form, "批次状态", new String[]{"有库存", "已开封", "已过期", "已丢弃"}, batchState(existing == null ? "IN_STOCK" : existing.state));
+        TextInputEditText notes = addField(form, "备注", existing == null ? "" : existing.notes, true);
+        ScrollView scroll = new ScrollView(this); scroll.addView(form);
+        AlertDialog dialog = new MaterialAlertDialogBuilder(this).setTitle(existing == null ? "添加实际批次" : "编辑实际批次").setView(scroll).setNegativeButton("取消", null).setPositiveButton("保存", null).create();
+        dialog.setOnShowListener(v -> dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(x -> {
+            double number; try { number = Double.parseDouble(value(quantity)); } catch (Exception error) { quantity.setError("请输入数字"); return; }
+            if (number < 0 || !validDate(value(production)) || !validDate(value(expiry)) || !validDate(value(opened))) { feedback("日期必须为空或 YYYY-MM-DD，数量不能为负"); return; }
+            LunaDatabase.BatchDraft draft = new LunaDatabase.BatchDraft(); draft.lotNo=value(lot); draft.quantity=number; draft.quantityUnit=value(unit); draft.productionDate=value(production); draft.expiryDate=value(expiry); draft.openedDate=value(opened); draft.storageLocation=value(location); draft.storageConditions=value(conditions); draft.state=batchStateCode(state.getText().toString()); draft.notes=value(notes);
+            if (existing == null) database.addBatch(medication.id, draft); else database.updateBatch(existing.id, draft);
+            dialog.dismiss(); scheduler.rebuild(); showTab(TAB_MEDICATIONS); feedback("批次已保存");
+        }));
+        dialog.show();
+    }
+
+    void showPlanManager(LunaDatabase.MedicationRow medication) {
+        LinearLayout list = verticalForm();
+        List<LunaDatabase.PlanRow> plans = database.plans(medication.id);
+        if (plans.isEmpty()) list.addView(label("暂无提醒计划；按需用药可以只记录实际服用。"));
+        for (LunaDatabase.PlanRow row : plans) {
+            LinearLayout line = new LinearLayout(this); line.setGravity(Gravity.CENTER_VERTICAL);
+            TextView summary = label(planLabel(row)); line.addView(summary, new LinearLayout.LayoutParams(0, dp(58), 1));
+            MaterialButton edit = button("编辑"); edit.setOnClickListener(v -> showPlanEditor(medication, row)); line.addView(edit);
+            MaterialButton pause = button(row.paused ? "恢复" : "暂停"); pause.setOnClickListener(v -> { database.setPlanPaused(row.id, !row.paused); scheduler.rebuild(); showPlanManager(medication); }); line.addView(pause);
+            MaterialButton delete = button("删除"); delete.setTextColor(palette.danger); delete.setOnClickListener(v -> new MaterialAlertDialogBuilder(this).setTitle("删除这个提醒计划？").setMessage("将删除尚未发生的提醒记录，不能撤销。").setNegativeButton("取消", null).setPositiveButton("删除", (d, w) -> { database.deletePlan(row.id); scheduler.rebuild(); showPlanManager(medication); }).show()); line.addView(delete); list.addView(line);
+        }
+        MaterialButton add = button("添加提醒计划"); add.setOnClickListener(v -> showPlanEditor(medication, null)); list.addView(add, margin(0, 8, 0, 0));
+        ScrollView scroll = new ScrollView(this); scroll.addView(list);
+        new MaterialAlertDialogBuilder(this).setTitle(medication.displayName() + " · 用药计划").setView(scroll).setPositiveButton("关闭", null).show();
+    }
+
+    private void showPlanEditor(LunaDatabase.MedicationRow medication, LunaDatabase.PlanRow existing) {
+        LinearLayout form = verticalForm();
+        String[] types = {"每天", "每周", "按间隔", "按需", "临时疗程"};
+        AutoCompleteTextView type = addChoice(form, "计划类型", types, planType(existing == null ? "DAILY" : existing.type));
+        TextInputEditText times = addField(form, "时间，例如 08:00,20:00", existing == null ? "08:00" : existing.timesCsv, false);
+        TextInputEditText interval = addField(form, "间隔小时", existing == null ? "8" : Integer.toString(existing.intervalHours), false);
+        TextView weekLabel = label("每周选择日期"); form.addView(weekLabel, margin(0, 6, 0, 2));
+        com.google.android.material.chip.ChipGroup days = new com.google.android.material.chip.ChipGroup(this); days.setSingleSelection(false);
+        String[] dayNames = {"周一", "周二", "周三", "周四", "周五", "周六", "周日"};
+        for (int i = 0; i < dayNames.length; i++) { com.google.android.material.chip.Chip chip = new com.google.android.material.chip.Chip(this); chip.setText(dayNames[i]); chip.setCheckable(true); chip.setChecked(existing == null || (existing.weekdaysMask & (1 << i)) != 0); days.addView(chip); }
+        form.addView(days);
+        TextInputEditText start = addField(form, "开始日期 YYYY-MM-DD", existing == null ? LocalDate.now().toString() : existing.startDate, false);
+        TextInputEditText end = addField(form, "结束日期 YYYY-MM-DD（可空）", existing == null ? "" : existing.endDate, false);
+        TextInputEditText dose = addField(form, "单次剂量", existing == null ? "1 次" : existing.dose, false);
+        TextInputEditText meal = addField(form, "饭前/饭后/随餐", existing == null ? "" : existing.meal, false);
+        TextInputEditText notes = addField(form, "计划备注", existing == null ? "" : existing.notes, true);
+        ScrollView scroll = new ScrollView(this); scroll.addView(form);
+        AlertDialog dialog = new MaterialAlertDialogBuilder(this).setTitle(existing == null ? "添加提醒计划" : "编辑提醒计划").setMessage("系统会按未来 30 天生成提醒；按需计划不自动生成闹钟。").setView(scroll).setNegativeButton("取消", null).setPositiveButton("保存", null).create();
+        dialog.setOnShowListener(v -> dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(x -> {
+            String typeCode = planTypeCode(type.getText().toString()); String timeCsv = value(times); String startDate = value(start); String endDate = value(end);
+            if (!"PRN".equals(typeCode) && !OccurrenceEngine.validTimeList(timeCsv)) { times.setError("时间格式应为 HH:mm，可用逗号分隔"); return; }
+            if (!validDate(startDate) || !validDate(endDate) || (!endDate.isEmpty() && endDate.compareTo(startDate) < 0)) { feedback("日期必须为空或 YYYY-MM-DD，结束日期不能早于开始日期"); return; }
+            int mask = 0; for (int i=0;i<days.getChildCount();i++) if (((com.google.android.material.chip.Chip)days.getChildAt(i)).isChecked()) mask |= 1 << i; if (mask == 0) mask = 127;
+            LunaDatabase.PlanDraft draft = new LunaDatabase.PlanDraft(); draft.type=typeCode; draft.timesCsv="PRN".equals(typeCode)?"08:00":timeCsv; draft.weekdaysMask=mask; draft.intervalHours=Math.max(1, parseInt(value(interval), 8)); draft.startDate=startDate; draft.endDate=endDate; draft.dose=value(dose); draft.meal=value(meal); draft.notes=value(notes); draft.paused=existing != null && existing.paused;
+            if (existing == null) database.addPlan(medication.id, draft); else database.updatePlan(existing.id, draft);
+            dialog.dismiss(); scheduler.rebuild(); showTab(TAB_MEDICATIONS); feedback("提醒计划已保存");
+        }));
+        dialog.show();
+    }
+
+    private TextInputEditText addField(LinearLayout form, String hint, String initial, boolean multiLine) {
+        TextInputLayout layout = new TextInputLayout(this);
+        layout.setHint(hint); layout.setBoxBackgroundMode(TextInputLayout.BOX_BACKGROUND_OUTLINE);
+        TextInputEditText field = new TextInputEditText(this); field.setSingleLine(!multiLine); if (multiLine) { field.setMinLines(3); field.setGravity(Gravity.TOP); }
+        field.setText(initial == null ? "" : initial); field.setTextSize(15); layout.addView(field, new LinearLayout.LayoutParams(-1, multiLine ? dp(88) : dp(58))); form.addView(layout, margin(0, 4, 0, 2)); return field;
+    }
+
+    private AutoCompleteTextView addChoice(LinearLayout form, String hint, String[] values, String initial) {
+        TextInputLayout layout = new TextInputLayout(this); layout.setHint(hint); layout.setBoxBackgroundMode(TextInputLayout.BOX_BACKGROUND_OUTLINE);
+        AutoCompleteTextView field = new AutoCompleteTextView(this); field.setInputType(InputType.TYPE_NULL); field.setText(initial, false); field.setAdapter(new ArrayAdapter<>(this, android.R.layout.simple_list_item_1, values)); layout.addView(field, new LinearLayout.LayoutParams(-1, dp(58))); form.addView(layout, margin(0, 4, 0, 2)); return field;
+    }
+
+    private MaterialButton button(String text) { MaterialButton button = new MaterialButton(this); button.setText(text); button.setAllCaps(false); button.setMinHeight(dp(48)); return button; }
+    private LinearLayout verticalForm() { LinearLayout form = new LinearLayout(this); form.setOrientation(LinearLayout.VERTICAL); form.setPadding(dp(8), dp(4), dp(8), dp(4)); return form; }
+    private TextView label(String text) { TextView view = new TextView(this); view.setText(text); view.setTextColor(palette.secondary); view.setTextSize(14); view.setLineSpacing(2, 1); return view; }
+    private LinearLayout.LayoutParams margin(int left, int top, int right, int bottom) { LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, -2); params.setMargins(dp(left), dp(top), dp(right), dp(bottom)); return params; }
+    private int dp(int value) { return Math.round(value * getResources().getDisplayMetrics().density); }
+    private static String value(EditText edit) { return edit.getText() == null ? "" : edit.getText().toString().trim(); }
+    private static String textOr(String value, String fallback) { return value == null || value.isEmpty() ? fallback : value; }
+    private static int parseInt(String value, int fallback) { try { return Integer.parseInt(value); } catch (Exception ignored) { return fallback; } }
+    private static boolean validDate(String value) { if (value == null || value.isEmpty()) return true; try { LocalDate.parse(value); return value.matches("20\\d{2}-\\d{2}-\\d{2}"); } catch (Exception ignored) { return false; } }
+    private static String formatQuantity(double value) { return value == Math.rint(value) ? Integer.toString((int)value) : String.format(Locale.US, "%.1f", value); }
+    private static String batchState(String value) { return "IN_STOCK".equals(value) ? "有库存" : "OPENED".equals(value) ? "已开封" : "EXPIRED".equals(value) ? "已过期" : "已丢弃"; }
+    private static String batchStateCode(String value) { return "已开封".equals(value) ? "OPENED" : "已过期".equals(value) ? "EXPIRED" : "已丢弃".equals(value) ? "DISCARDED" : "IN_STOCK"; }
+    private static String planType(String value) { return "WEEKLY".equals(value) ? "每周" : "INTERVAL".equals(value) ? "按间隔" : "PRN".equals(value) ? "按需" : "TEMP".equals(value) ? "临时疗程" : "每天"; }
+    private static String planTypeCode(String value) { return "每周".equals(value) ? "WEEKLY" : "按间隔".equals(value) ? "INTERVAL" : "按需".equals(value) ? "PRN" : "临时疗程".equals(value) ? "TEMP" : "DAILY"; }
+    private static String planLabel(LunaDatabase.PlanRow row) { String result = (row.paused ? "已暂停 · " : "") + planType(row.type); if ("INTERVAL".equals(row.type)) result += " · 每 " + row.intervalHours + " 小时"; else if (!"PRN".equals(row.type)) result += " · " + row.timesCsv; if ("WEEKLY".equals(row.type)) result += " · " + daysLabel(row.weekdaysMask); if (!row.dose.isEmpty()) result += " · " + row.dose; return result; }
+    private static String daysLabel(int mask) { String[] days={"周一","周二","周三","周四","周五","周六","周日"}; StringBuilder s=new StringBuilder(); for(int i=0;i<7;i++) if((mask&(1<<i))!=0){if(s.length()>0)s.append("、");s.append(days[i]);} return s.length()==0?"未选择日期":s.toString(); }
 }
