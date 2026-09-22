@@ -10,16 +10,57 @@ function ipv4Parts(value) {
   return parts.length === 4 && parts.every(part => Number.isInteger(part) && part >= 0 && part <= 255) ? parts : null;
 }
 
+function isPublicIpv4Parts(parts) {
+  if (!parts) return false;
+  const [a, b] = parts;
+  return !(a === 0 || a === 10 || a === 127 || a >= 224 || (a === 169 && b === 254)
+    || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168));
+}
+
+function mappedIpv4Parts(value) {
+  const halves = value.toLowerCase().split('::');
+  if (halves.length > 2) return null;
+
+  function parseHalf(half) {
+    if (!half) return [];
+    const tokens = half.split(':');
+    const segments = [];
+    for (let index = 0; index < tokens.length; index += 1) {
+      const token = tokens[index];
+      if (token.includes('.')) {
+        if (index !== tokens.length - 1) return null;
+        const bytes = ipv4Parts(token);
+        if (!bytes) return null;
+        segments.push((bytes[0] << 8) | bytes[1], (bytes[2] << 8) | bytes[3]);
+      } else {
+        if (!/^[0-9a-f]{1,4}$/.test(token)) return null;
+        segments.push(Number.parseInt(token, 16));
+      }
+    }
+    return segments;
+  }
+
+  const left = parseHalf(halves[0]);
+  const right = parseHalf(halves.length === 2 ? halves[1] : '');
+  if (!left || !right || (halves.length === 1 && left.length !== 8)) return null;
+  if (halves.length === 2 && left.length + right.length >= 8) return null;
+  const segments = halves.length === 2
+    ? [...left, ...new Array(8 - left.length - right.length).fill(0), ...right]
+    : left;
+  if (segments.length !== 8 || !segments.slice(0, 5).every(segment => segment === 0) || segments[5] !== 0xffff) {
+    return null;
+  }
+  return [segments[6] >> 8, segments[6] & 0xff, segments[7] >> 8, segments[7] & 0xff];
+}
+
 export function isPublicAddress(address) {
   const version = net.isIP(address);
   if (version === 4) {
-    const p = ipv4Parts(address);
-    if (!p) return false;
-    const [a, b] = p;
-    return !(a === 0 || a === 10 || a === 127 || a >= 224 || (a === 169 && b === 254)
-      || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168));
+    return isPublicIpv4Parts(ipv4Parts(address));
   }
   if (version === 6) {
+    const mapped = mappedIpv4Parts(address);
+    if (mapped) return isPublicIpv4Parts(mapped);
     const lower = address.toLowerCase();
     return lower !== '::' && lower !== '::1' && !lower.startsWith('fc') && !lower.startsWith('fd')
       && !lower.startsWith('fe8') && !lower.startsWith('fe9') && !lower.startsWith('fea') && !lower.startsWith('feb')

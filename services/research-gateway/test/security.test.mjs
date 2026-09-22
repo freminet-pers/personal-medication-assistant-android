@@ -34,6 +34,9 @@ test('web policy rejects private targets and credentials', async () => {
   assert.equal(isPublicAddress('127.0.0.1'), false);
   assert.equal(isPublicAddress('10.0.0.4'), false);
   assert.equal(isPublicAddress('::1'), false);
+  assert.equal(isPublicAddress('::ffff:127.0.0.1'), false);
+  assert.equal(isPublicAddress('0:0:0:0:0:ffff:7f00:1'), false);
+  assert.equal(isPublicAddress('::ffff:8.8.8.8'), true);
   await assert.rejects(() => assertSafeUrl('http://user:pass@example.com/'));
   await assert.rejects(() => assertSafeUrl('http://127.0.0.1/'));
 });
