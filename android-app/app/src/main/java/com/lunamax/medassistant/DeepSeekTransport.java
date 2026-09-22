@@ -19,8 +19,9 @@ import javax.net.ssl.SSLException;
  * timeout and error mapping so repositories never duplicate or log secrets.
  */
 final class DeepSeekTransport {
-    static final String TEXT_MODEL = "deepseek-v4-flash";
-    static final String VISION_MODEL = "deepseek-v4-flash-vision-exp";
+    static final String TEXT_MODEL = "deepseek-flash";
+    /** @deprecated v0.4 uses one multimodal model; retained only for source compatibility during migration. */
+    @Deprecated static final String VISION_MODEL = TEXT_MODEL;
     static final String DEFAULT_MESSAGES_BASE = "https://api.deepseek.com/anthropic/v1";
     static final String DEFAULT_CHAT_BASE = "https://api.deepseek.com";
     static final String ANTHROPIC_VERSION = "2023-06-01";
@@ -81,7 +82,7 @@ final class DeepSeekTransport {
             connection.setDoOutput(true);
             connection.setRequestProperty("Content-Type", "application/json");
             connection.setRequestProperty("Accept", "application/json");
-            connection.setRequestProperty("User-Agent", "personal-medication-assistant/0.3.0");
+            connection.setRequestProperty("User-Agent", "personal-medication-assistant/0.4.0");
             if (anthropic) {
                 // Official Harness sends both headers so the official endpoint
                 // and compatible gateways resolve the same runtime credential.
