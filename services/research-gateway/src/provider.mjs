@@ -13,7 +13,7 @@ export function buildSearchRequest(query, maxUses = MAX_SEARCH_USES) {
   assertModel(MODEL);
   const key = requireRuntimeKey();
   return {
-    url: `${API_BASE.replace(/\/$/, '')}/anthropic/v1/messages`,
+    url: `${API_BASE.replace(/\/$/, '')}/messages`,
     init: {
       method: 'POST',
       redirect: 'error',
@@ -21,12 +21,14 @@ export function buildSearchRequest(query, maxUses = MAX_SEARCH_USES) {
         'content-type': 'application/json',
         'x-api-key': key,
         authorization: `Bearer ${key}`,
-        'anthropic-version': ANTHROPIC_VERSION
+        'anthropic-version': ANTHROPIC_VERSION,
+        accept: 'application/json',
+        'user-agent': 'personal-medication-assistant/0.3.0'
       },
       body: JSON.stringify({
         model: MODEL,
         max_tokens: 4096,
-        messages: [{ role: 'user', content: query }],
+        messages: [{ role: 'user', content: [{ type: 'text', text: `Perform a web search for the query: ${query}` }] }],
         tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: maxUses }]
       })
     }

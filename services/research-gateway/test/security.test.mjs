@@ -6,20 +6,25 @@ import { assertSafeUrl, isPublicAddress, UNTRUSTED_WEB_WARNING } from '../src/fe
 import { MEDICAL_SAFETY_SYSTEM_PROMPT, SAFETY_PROMPT_VERSION, buildPromptInput } from '../src/prompt.mjs';
 
 test('formal model allowlist rejects every non-flash choice', () => {
-  assert.equal(assertModel('deepseek-flash'), 'deepseek-flash');
-  assert.throws(() => assertModel('deepseek-chat'), /Only deepseek-flash/);
-  assert.throws(() => assertModel('deepseek-reasoner'), /Only deepseek-flash/);
+  assert.equal(assertModel('deepseek-v4-flash'), 'deepseek-v4-flash');
+  assert.throws(() => assertModel('deepseek-v4-pro'), /Only deepseek-v4-flash/);
+  assert.throws(() => assertModel('deepseek-chat'), /Only deepseek-v4-flash/);
+  assert.throws(() => assertModel('deepseek-reasoner'), /Only deepseek-v4-flash/);
 });
 
-test('runtime search request has no API key in a serializable record', () => {
+test('runtime search request requires a runtime credential and never serializes headers', () => {
   const old = process.env.DEEPSEEK_API_KEY;
-  process.env.DEEPSEEK_API_KEY = 'test-value-without-secret-prefix';
   try {
-    const request = buildSearchRequest('official medicine label');
-    const serialized = JSON.stringify({ url: request.url, body: request.init.body });
-    assert.match(request.init.headers.authorization, /^Bearer /);
-    assert.doesNotMatch(serialized, /test-value-without-secret-prefix/);
-    assert.match(request.init.body, /deepseek-flash/);
+    delete process.env.DEEPSEEK_API_KEY;
+    assert.throws(() => buildSearchRequest('official medicine label'), /not configured at runtime/);
+    if (old !== undefined) {
+      process.env.DEEPSEEK_API_KEY = old;
+      const request = buildSearchRequest('official medicine label');
+      const serialized = JSON.stringify({ url: request.url, body: request.init.body });
+      assert.doesNotMatch(serialized, /Bearer|x-api-key/);
+      assert.match(request.init.body, /deepseek-v4-flash/);
+      delete process.env.DEEPSEEK_API_KEY;
+    }
   } finally {
     if (old === undefined) delete process.env.DEEPSEEK_API_KEY; else process.env.DEEPSEEK_API_KEY = old;
   }

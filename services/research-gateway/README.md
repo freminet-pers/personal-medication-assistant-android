@@ -1,6 +1,6 @@
 # 个人用药助手 research gateway
 
-这是一个仅绑定 `127.0.0.1` 的受控后端原型。正式 AI 模型固定为 `deepseek-flash`；研究检索走 DeepSeek 官方 Anthropic-compatible Web Search 工具，网页抓取沿用官方 Harness 的 HTTP(S)、同源重定向、公开地址、内容类型、大小上限和不可信内容告警边界。它不是模拟搜索：没有运行时密钥时会返回明确的 `WEB_PROVIDER_CREDENTIAL_MISSING`。
+这是一个仅绑定 `127.0.0.1` 的受控后端原型。正式 AI 模型固定为 `deepseek-v4-flash`；研究检索走 DeepSeek 官方 Anthropic-compatible Web Search 工具，网页抓取沿用官方 Harness 的 HTTP(S)、同源重定向、公开地址、内容类型、大小上限和不可信内容告警边界。它不是模拟搜索：没有运行时密钥时会返回明确的 `WEB_PROVIDER_CREDENTIAL_MISSING`。
 
 ## 本地运行
 

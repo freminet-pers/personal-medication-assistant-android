@@ -26,16 +26,16 @@ async function readJson(request) {
 
 async function answer(question, context) {
   const key = requireRuntimeKey();
-  const response = await fetch(`${API_BASE.replace(/\/$/, '')}/responses`, {
+  const response = await fetch(`${API_BASE.replace(/\/$/, '')}/messages`, {
     method: 'POST', redirect: 'error',
-    headers: { 'content-type': 'application/json', authorization: `Bearer ${key}` },
-    body: JSON.stringify({ model: assertModel(MODEL), instructions: MEDICAL_SAFETY_SYSTEM_PROMPT, input: buildPromptInput(question, context), max_output_tokens: 1200 })
+    headers: { 'content-type': 'application/json', accept: 'application/json', 'x-api-key': key, authorization: `Bearer ${key}`, 'anthropic-version': '2023-06-01', 'user-agent': 'personal-medication-assistant/0.3.0' },
+    body: JSON.stringify({ model: assertModel(MODEL), system: MEDICAL_SAFETY_SYSTEM_PROMPT, messages: [{ role: 'user', content: [{ type: 'text', text: buildPromptInput(question, context) }] }], max_tokens: 1200, thinking: { type: 'disabled' } })
   });
   if (!response.ok) throw Object.assign(new Error(`DeepSeek answer failed with HTTP ${response.status}.`), { code: 'AI_PROVIDER_ERROR' });
   const payload = await response.json();
-  const text = Array.isArray(payload.output)
-    ? payload.output.flatMap(item => Array.isArray(item.content) ? item.content : []).map(item => item.text || '').join(' ').trim()
-    : (typeof payload.output_text === 'string' ? payload.output_text : '');
+  const text = Array.isArray(payload.content)
+    ? payload.content.filter(item => item?.type === 'text').map(item => item.text || '').join(' ').trim()
+    : '';
   if (!text) throw Object.assign(new Error('DeepSeek returned no answer text.'), { code: 'AI_PROVIDER_ERROR' });
   return { answer: text, safety_prompt_version: SAFETY_PROMPT_VERSION };
 }

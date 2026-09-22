@@ -8,7 +8,6 @@ import android.util.Base64;
 import java.nio.charset.StandardCharsets;
 import java.security.KeyStore;
 import java.security.MessageDigest;
-import java.security.SecureRandom;
 
 import javax.crypto.Cipher;
 import javax.crypto.KeyGenerator;
@@ -20,17 +19,17 @@ final class DataCipher {
     private static final String STORE = "AndroidKeyStore";
     private static final String ALIAS = "luna_max_data_v1";
     private static final String PREFIX = "v1:";
-    private final SecureRandom random = new SecureRandom();
-
     DataCipher(Context ignored) { }
 
     String encrypt(String value) {
         if (value == null) return null;
         try {
-            byte[] iv = new byte[12];
-            random.nextBytes(iv);
             Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
-            cipher.init(Cipher.ENCRYPT_MODE, key(), new GCMParameterSpec(128, iv));
+            // AndroidKeyStore generates a fresh IV for every encryption. Supplying
+            // our own IV is incompatible with randomizedEncryptionRequired on a
+            // number of real devices.
+            cipher.init(Cipher.ENCRYPT_MODE, key());
+            byte[] iv = cipher.getIV();
             byte[] ciphertext = cipher.doFinal(value.getBytes(StandardCharsets.UTF_8));
             return PREFIX + Base64.encodeToString(iv, Base64.NO_WRAP) + ":" + Base64.encodeToString(ciphertext, Base64.NO_WRAP);
         } catch (Exception error) {
@@ -88,16 +87,6 @@ final class DataCipher {
         }
         SecretKey secret = ((KeyStore.SecretKeyEntry) entry).getSecretKey();
         if (!"AES".equalsIgnoreCase(secret.getAlgorithm())) throw new IllegalStateException("SECURE_STORAGE_KEY_INVALID");
-        try {
-            Cipher probe = Cipher.getInstance("AES/GCM/NoPadding");
-            probe.init(Cipher.ENCRYPT_MODE, secret, new GCMParameterSpec(128, new byte[12]));
-        } catch (Exception incompatible) {
-            store.deleteEntry(ALIAS);
-            generate(store, 256);
-            entry = store.getEntry(ALIAS, null);
-            if (!(entry instanceof KeyStore.SecretKeyEntry)) throw new IllegalStateException("SECURE_STORAGE_KEY_INVALID");
-            secret = ((KeyStore.SecretKeyEntry) entry).getSecretKey();
-        }
         return secret;
     }
 

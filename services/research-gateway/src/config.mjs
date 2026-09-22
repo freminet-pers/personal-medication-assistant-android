@@ -1,11 +1,11 @@
-export const MODEL = 'deepseek-flash';
-export const API_BASE = process.env.DEEPSEEK_API_BASE || 'https://api.deepseek.com';
+export const MODEL = 'deepseek-v4-flash';
+export const API_BASE = process.env.DEEPSEEK_API_BASE || 'https://api.deepseek.com/anthropic/v1';
 export const MAX_SEARCH_QUERIES = 4;
 export const MAX_SEARCH_USES = 5;
 
 export function assertModel(model = MODEL) {
   if (model !== MODEL) {
-    const error = new Error('Only deepseek-flash is permitted by the formal project policy.');
+    const error = new Error('Only deepseek-v4-flash is permitted by the formal project policy.');
     error.code = 'MODEL_NOT_ALLOWED';
     throw error;
   }
