@@ -124,6 +124,7 @@ final class AssistantRepository {
                 callback.success(new Response(structured.answer, sources, personalDataUsed, selected,
                         structured.evidence, structured.uncertainty));
             } catch (Exception error) {
+                if (!isCurrent(generation)) return;
                 callback.failure(friendlyError(error));
             }
         });
