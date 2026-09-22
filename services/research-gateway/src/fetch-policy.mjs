@@ -19,7 +19,7 @@ function isPublicIpv4Parts(parts) {
     || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168));
 }
 
-function mappedIpv4Parts(value) {
+function ipv6Segments(value) {
   const halves = value.toLowerCase().split('::');
   if (halves.length > 2) return null;
 
@@ -49,9 +49,12 @@ function mappedIpv4Parts(value) {
   const segments = halves.length === 2
     ? [...left, ...new Array(8 - left.length - right.length).fill(0), ...right]
     : left;
-  if (segments.length !== 8 || !segments.slice(0, 5).every(segment => segment === 0) || segments[5] !== 0xffff) {
-    return null;
-  }
+  return segments.length === 8 ? segments : null;
+}
+
+function mappedIpv4Parts(value) {
+  const segments = ipv6Segments(value);
+  if (!segments || !segments.slice(0, 5).every(segment => segment === 0) || segments[5] !== 0xffff) return null;
   return [segments[6] >> 8, segments[6] & 0xff, segments[7] >> 8, segments[7] & 0xff];
 }
 
@@ -61,12 +64,18 @@ export function isPublicAddress(address) {
     return isPublicIpv4Parts(ipv4Parts(address));
   }
   if (version === 6) {
+    const segments = ipv6Segments(address);
+    if (!segments) return false;
     const mapped = mappedIpv4Parts(address);
     if (mapped) return isPublicIpv4Parts(mapped);
-    const lower = address.toLowerCase();
-    return lower !== '::' && lower !== '::1' && !lower.startsWith('fc') && !lower.startsWith('fd')
-      && !lower.startsWith('fe8') && !lower.startsWith('fe9') && !lower.startsWith('fea') && !lower.startsWith('feb')
-      && !lower.startsWith('ff');
+    const allZero = segments.every(segment => segment === 0);
+    const loopback = segments.slice(0, 7).every(segment => segment === 0) && segments[7] === 1;
+    const ipv4Compatible = segments.slice(0, 6).every(segment => segment === 0);
+    const first = segments[0];
+    const uniqueLocal = (first & 0xfe00) === 0xfc00;
+    const linkLocal = (first & 0xffc0) === 0xfe80;
+    const multicast = (first & 0xff00) === 0xff00;
+    return !allZero && !loopback && !ipv4Compatible && !uniqueLocal && !linkLocal && !multicast;
   }
   return false;
 }

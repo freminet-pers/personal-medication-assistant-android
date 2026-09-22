@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { assertModel } from '../src/config.mjs';
+import { assertModel, normalizeApiBase } from '../src/config.mjs';
 import { buildSearchRequest } from '../src/provider.mjs';
 import { assertSafeUrl, fetchPublicText, isPublicAddress, UNTRUSTED_WEB_WARNING } from '../src/fetch-policy.mjs';
 import { MEDICAL_SAFETY_SYSTEM_PROMPT, SAFETY_PROMPT_VERSION, buildPromptInput } from '../src/prompt.mjs';
@@ -34,11 +34,22 @@ test('web policy rejects private targets and credentials', async () => {
   assert.equal(isPublicAddress('127.0.0.1'), false);
   assert.equal(isPublicAddress('10.0.0.4'), false);
   assert.equal(isPublicAddress('::1'), false);
+  assert.equal(isPublicAddress('0:0:0:0:0:0:0:0'), false);
+  assert.equal(isPublicAddress('0:0:0:0:0:0:0:1'), false);
+  assert.equal(isPublicAddress('::127.0.0.1'), false);
   assert.equal(isPublicAddress('::ffff:127.0.0.1'), false);
   assert.equal(isPublicAddress('0:0:0:0:0:ffff:7f00:1'), false);
   assert.equal(isPublicAddress('::ffff:8.8.8.8'), true);
   await assert.rejects(() => assertSafeUrl('http://user:pass@example.com/'));
   await assert.rejects(() => assertSafeUrl('http://127.0.0.1/'));
+});
+
+test('provider endpoint is pinned to the official DeepSeek host', () => {
+  assert.equal(normalizeApiBase(''), 'https://api.deepseek.com/anthropic/v1');
+  assert.equal(normalizeApiBase('https://api.deepseek.com/anthropic/v1/'), 'https://api.deepseek.com/anthropic/v1');
+  assert.throws(() => normalizeApiBase('https://attacker.example/anthropic/v1'), /official DeepSeek/);
+  assert.throws(() => normalizeApiBase('http://api.deepseek.com/anthropic/v1'), /official DeepSeek/);
+  assert.throws(() => normalizeApiBase('https://api.deepseek.com/anthropic/v1?forward_key=1'), /official DeepSeek/);
 });
 
 test('web response limit is enforced for injected fetch responses', async () => {

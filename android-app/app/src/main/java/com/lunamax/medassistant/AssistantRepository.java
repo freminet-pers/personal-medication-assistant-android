@@ -172,7 +172,14 @@ final class AssistantRepository {
     private static String friendlyError(Exception error) {
         if (error instanceof DeepSeekTransport.DeepSeekException) return error.getMessage();
         String message = error.getMessage();
-        return message == null || message.isEmpty() ? "请求失败：请稍后重试" : message.replaceAll("(?i)(api[- ]?key|bearer)\\s*[:=]?\\s*\\S+", "$1 [已隐藏]");
+        return message == null || message.isEmpty() ? "请求失败：请稍后重试" : redact(message);
+    }
+
+    private static String redact(String message) {
+        return message
+                .replaceAll("(?i)bearer\\s+\\S+", "Bearer [已隐藏]")
+                .replaceAll("(?i)(x-api-key|api[- ]?key)\\s*[:=]?\\s*\\S+", "$1 [已隐藏]")
+                .replaceAll("(?i)\\bsk-[A-Za-z0-9_-]{8,}\\b", "[已隐藏]");
     }
 
     static final class StructuredAnswer {

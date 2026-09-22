@@ -61,6 +61,7 @@ public final class MainActivity extends AppCompatActivity {
     private static final String BACKUP_PREFIX = "PERSONAL_MED_BACKUP_V3\n";
     private static final String LEGACY_BACKUP_PREFIX = "PERSONAL_MED_BACKUP_V2\n";
     private static final String OLD_BACKUP_PREFIX = "LUNA_MAX_BACKUP_V1\n";
+    private static final String DATA_CIPHER_PREFIX = "v1:";
 
     private ActivityMainBinding binding;
     private Palette palette;
@@ -285,6 +286,7 @@ public final class MainActivity extends AppCompatActivity {
                         : raw.startsWith(LEGACY_BACKUP_PREFIX) ? raw.substring(LEGACY_BACKUP_PREFIX.length())
                         : raw.startsWith(OLD_BACKUP_PREFIX) ? raw.substring(OLD_BACKUP_PREFIX.length()) : "";
                 if (encrypted.isEmpty()) throw new IllegalArgumentException("备份格式无法识别");
+                if (!encrypted.startsWith(DATA_CIPHER_PREFIX)) throw new IllegalArgumentException("备份必须使用应用加密格式");
                 String decoded = new DataCipher(this).decryptStrict(encrypted);
                 JSONObject bundle = new JSONObject(decoded);
                 runOnUiThread(() -> new MaterialAlertDialogBuilder(this).setTitle("替换本机资料？").setMessage("导入会替换当前药物、计划、健康记录、资料索引和本地会话，不会导入 API Key。")

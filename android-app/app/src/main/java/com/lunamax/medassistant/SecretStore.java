@@ -114,7 +114,7 @@ final class SecretStore {
     }
 
     void recordConnection(String status) {
-        String safe = status == null ? "请求失败" : status.replaceAll("(?i)bearer\\s+\\S+", "Bearer [已隐藏]");
+        String safe = redact(status == null ? "请求失败" : status);
         preferences.edit().putString(LAST_STATUS, safe).putLong(LAST_AT, System.currentTimeMillis()).commit();
     }
 
@@ -215,6 +215,13 @@ final class SecretStore {
 
     private static String safeMessage(Exception error, String fallback) {
         String message = error.getMessage();
-        return message == null || message.isEmpty() ? fallback : message.replaceAll("(?i)(api[- ]?key|bearer)\\s*[:=]?\\s*\\S+", "$1 [已隐藏]");
+        return message == null || message.isEmpty() ? fallback : redact(message);
+    }
+
+    private static String redact(String message) {
+        return message
+                .replaceAll("(?i)bearer\\s+\\S+", "Bearer [已隐藏]")
+                .replaceAll("(?i)(x-api-key|api[- ]?key)\\s*[:=]?\\s*\\S+", "$1 [已隐藏]")
+                .replaceAll("(?i)\\bsk-[A-Za-z0-9_-]{8,}\\b", "[已隐藏]");
     }
 }
