@@ -21,7 +21,7 @@ import java.util.Map;
 /** Local store for the complete product model. Free-text fields are encrypted with Android Keystore. */
 final class LunaDatabase extends SQLiteOpenHelper {
     private static final String NAME = "luna_max_local.db";
-    private static final int VERSION = 5;
+    private static final int VERSION = 6;
     private final SimpleDateFormat dayFormat = new SimpleDateFormat("yyyy-MM-dd", Locale.US);
     private final DataCipher cipher;
 
@@ -47,7 +47,8 @@ final class LunaDatabase extends SQLiteOpenHelper {
         addColumn(db, "occurrence", "actual_at_ms", "INTEGER DEFAULT 0"); addColumn(db, "occurrence", "snooze_until_ms", "INTEGER DEFAULT 0"); addColumn(db, "occurrence", "batch_id", "INTEGER DEFAULT 0"); addColumn(db, "occurrence", "user_note_enc", "TEXT");
         addColumn(db, "document", "links_enc", "TEXT");
         addColumn(db, "document", "compressed_uri_enc", "TEXT"); addColumn(db, "document", "compressed_sha256", "TEXT"); addColumn(db, "document", "ai_raw_response_enc", "TEXT"); addColumn(db, "document", "structured_json_enc", "TEXT"); addColumn(db, "document", "prompt_version_enc", "TEXT"); addColumn(db, "document", "model", "TEXT"); addColumn(db, "document", "recognition_status", "TEXT DEFAULT 'LEGACY'"); addColumn(db, "document", "failure_reason_enc", "TEXT"); addColumn(db, "document", "request_at_ms", "INTEGER DEFAULT 0");
-        migratePrototypeRows(db);
+        if (oldVersion < 5) migratePrototypeRows(db);
+        if (oldVersion < 6) clearLegacyScheduleText(db);
         if (oldVersion < 5) createAssistantTables(db);
     }
 
@@ -106,6 +107,9 @@ final class LunaDatabase extends SQLiteOpenHelper {
         } catch (Exception error) {
             throw new IllegalStateException("DATABASE_MIGRATION_FAILED", error);
         }
+    }
+    private static void clearLegacyScheduleText(SQLiteDatabase db) {
+        db.execSQL("UPDATE plan SET time_text='' WHERE time_text IS NOT NULL AND time_text<>''");
     }
     String today() { return dayFormat.format(new java.util.Date()); }
 
