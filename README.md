@@ -31,6 +31,7 @@ $env:JAVA_HOME = 'C:\Program Files\Android\Android Studio\jbr'
 
 默认 Debug APK：`android-app/app/build/outputs/apk/debug/app-debug.apk`。
 版本化交付副本：`个人用药助手-v0.3.0-debug.apk`（不纳入源码提交，供安装或 Release 附件使用）。
+最终 GitHub 仓库：`freminet-pers/personal-medication-assistant-android`（私有验收后再公开）。
 
 ## 隐私与运行时 Key
 
