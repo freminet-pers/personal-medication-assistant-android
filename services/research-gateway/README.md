@@ -1,6 +1,6 @@
 # 个人用药助手 research gateway
 
-这是一个仅绑定 `127.0.0.1` 的受控后端原型。正式 AI 模型固定为 `deepseek-v4-flash`；研究检索走 DeepSeek 官方 Anthropic-compatible Web Search 工具，网页抓取沿用官方 Harness 的 HTTP(S)、同源重定向、公开地址、内容类型、大小上限和不可信内容告警边界。它不是模拟搜索：没有运行时密钥时会返回明确的 `WEB_PROVIDER_CREDENTIAL_MISSING`。
+这是一个仅绑定 `127.0.0.1` 的受控后端原型。正式 AI 模型固定为 `deepseek-v4-flash`；文本、回答和研究检索统一走 DeepSeek 官方 Anthropic-compatible Messages `/messages` 协议，研究检索使用 `web_search_20250305`。网页抓取沿用官方 Harness 的 HTTP(S)、同源重定向、公开地址、内容类型、大小上限和不可信内容告警边界。它不是模拟搜索：没有运行时密钥时会返回明确的 `WEB_PROVIDER_CREDENTIAL_MISSING`。
 
 ## 本地运行
 
@@ -15,7 +15,7 @@ Remove-Item Env:DEEPSEEK_API_KEY
 ## 接口
 
 - `GET /health`
-- `POST /v1/research/search`：`{"queries":["..."]}`，最多 4 个唯一查询。
+- `POST /v1/research/search`：`{"queries":["..."]}`，最多 4 个唯一查询；上游模型固定 `deepseek-v4-flash`，单次最多 5 个 Web Search uses。
 - `POST /v1/research/fetch`：`{"url":"https://..."}`，拒绝 URL 凭据、私网解析、跨源重定向和超限响应。
 - `POST /v1/assistant/answer`：问题与最小必要上下文；返回必须配合来源和证据级别展示。
 
