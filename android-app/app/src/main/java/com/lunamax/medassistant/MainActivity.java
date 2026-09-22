@@ -232,6 +232,9 @@ public final class MainActivity extends AppCompatActivity {
                 .setPositiveButton("删除全部", (d, w) -> {
                     boolean complete = true;
                     assistant.cancelPending();
+                    vision.cancelPending();
+                    Fragment current = getSupportFragmentManager().findFragmentById(R.id.page_container);
+                    if (current instanceof DocumentsFragment) ((DocumentsFragment) current).cancelPendingUi();
                     try { database.clearData(true); } catch (Exception error) { complete = false; }
                     try { assistant.deleteKey(); } catch (Exception error) { complete = false; }
                     try { new DataCipher(this).deleteKey(); } catch (Exception error) { complete = false; }

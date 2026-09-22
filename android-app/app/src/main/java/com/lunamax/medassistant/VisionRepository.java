@@ -9,6 +9,7 @@ import org.json.JSONObject;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicLong;
 
 /** Vision-only repository: raw files stay private and responses remain drafts. */
 final class VisionRepository {
@@ -17,7 +18,9 @@ final class VisionRepository {
 
     private final SecretStore secrets;
     private final DeepSeekTransport transport;
-    private final ExecutorService executor = Executors.newSingleThreadExecutor();
+    private final Object executorLock = new Object();
+    private final AtomicLong requestGeneration = new AtomicLong();
+    private ExecutorService executor = Executors.newSingleThreadExecutor();
 
     VisionRepository(Context context) {
         secrets = new SecretStore(context);
@@ -26,9 +29,26 @@ final class VisionRepository {
 
     void setBaseUrl(String value) { transport.setBaseUrl(value); }
 
+    void cancelPending() {
+        requestGeneration.incrementAndGet();
+        synchronized (executorLock) {
+            executor.shutdownNow();
+            executor = Executors.newSingleThreadExecutor();
+        }
+    }
+
+    long currentGeneration() { return requestGeneration.get(); }
+    boolean isCurrent(long generation) { return requestGeneration.get() == generation; }
+
+    private void execute(Runnable task) {
+        synchronized (executorLock) { executor.execute(task); }
+    }
+
     void recognizeImage(byte[] imageBytes, String mimeType, int pageNumber, Callback callback) {
-        executor.execute(() -> {
+        long generation = currentGeneration();
+        execute(() -> {
             try {
+                if (!isCurrent(generation)) return;
                 String key = secrets.readApiKey();
                 if (key == null || key.isEmpty()) throw new IllegalStateException("未配置 DeepSeek API Key，请先保存 Key");
                 if (imageBytes == null || imageBytes.length == 0) throw new IllegalArgumentException("识别图片为空");
@@ -47,8 +67,10 @@ final class VisionRepository {
                         .put("response_format", new JSONObject().put("type", "json_object"));
                 JSONObject payload = transport.postChatCompletions(key, body);
                 String rawText = extractChatText(payload);
+                if (!isCurrent(generation)) return;
                 callback.success(parseVision(payload.toString(), rawText));
             } catch (Exception error) {
+                if (!isCurrent(generation)) return;
                 callback.failure(friendlyError(error));
             }
         });
@@ -169,7 +191,7 @@ final class VisionRepository {
     }
 
     private static String friendlyError(Exception error) {
-        if (error instanceof DeepSeekTransport.DeepSeekException) return error.getMessage();
+        if (error instanceof DeepSeekTransport.DeepSeekException) return redact(error.getMessage());
         String message = error.getMessage();
         return message == null || message.isEmpty() ? "识别失败：请稍后重试" : redact(message);
     }
